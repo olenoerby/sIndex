@@ -492,6 +492,9 @@ def process_post(post_item, session: Session):
                                 logger.debug('Failed to increment analytics for mention')
                 except Exception:
                     session.rollback()
+        except Exception as e:
+            session.rollback()
+            logger.exception(f"Error processing edited comments for post {reddit_id}: {e}")
 
     # After processing new and edited comments, update the post's unique_subreddits
     try:
