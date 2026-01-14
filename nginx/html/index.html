@@ -55,7 +55,7 @@
 </head>
 <body>
   <h1><a href="/" style="color:inherit;text-decoration:none">Pineapple Index</a><button id="explainBtn" class="info-btn" title="About" aria-label="About">About</button><span id="headerSubCount" class="header-count">0 Unique subreddits scanned</span></h1>
-  <p class="muted" style="margin-top:6px">A tribute to <a href="https://www.reddit.com/user/WeirdPineapple" target="_blank" rel="noopener noreferrer">/u/WeirdPineapple</a> — thank you for your contributions!</p>
+  <p class="muted" style="margin-top:6px">A subreddit list with thanks to <a href="https://www.reddit.com/user/WeirdPineapple" target="_blank" rel="noopener noreferrer">/u/WeirdPineapple</a>!</p>
 
       <div class="container">
         <div class="controls card">
@@ -227,14 +227,7 @@
       }catch(e){ /* ignore malformed cookie */ }
     }
 
-    function generateRandomOrderFromList(list){
-      randomOrder = list.map(s=>s.name);
-      for (let i = randomOrder.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [randomOrder[i], randomOrder[j]] = [randomOrder[j], randomOrder[i]];
-      }
-      savePrefs();
-    }
+    // `generateRandomOrderFromList` removed (was unused) to reduce clutter.
 
     function updateColumnVisibility(list){
       try{
@@ -578,6 +571,23 @@
         tr.appendChild(descTd);
         tbody.appendChild(tr);
       }
+      // If list is empty, show a full-width row with a Reset button so users can quickly restore filters
+      if(list.length === 0){
+        const trEmpty = document.createElement('tr');
+        const tdEmpty = document.createElement('td');
+        tdEmpty.colSpan = 6;
+        tdEmpty.style.textAlign = 'center';
+        tdEmpty.style.padding = '24px';
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-ghost';
+        btn.textContent = 'Reset all filters';
+        btn.addEventListener('click', ()=>{
+          try{ const hdr = document.getElementById('resetFilters'); if(hdr) hdr.click(); }catch(e){}
+        });
+        tdEmpty.appendChild(btn);
+        trEmpty.appendChild(tdEmpty);
+        tbody.appendChild(trEmpty);
+      }
       try{
         if(Array.isArray(list) && list.length === 0){
           document.getElementById('count').textContent = `Showing 0 out of ${dbTotal} in database`;
@@ -714,7 +724,7 @@
 
       // initial placement and react to resize
       placeExplainButton();
-      window.addEventListener('resize', ()=>{ placeExplainButton(); placeOptionsButton(); });
+      window.addEventListener('resize', ()=>{ placeExplainButton(); });
     })();
     // Options integrated into filter popout; old Options popout removed.
     // header click sorting: set sort key and toggle direction if same key
