@@ -61,7 +61,8 @@ services:
     restart: unless-stopped
     depends_on:
       - nginx
-    command: tunnel --no-autoupdate run --token "eyJhIjoiMTcxMTI5ODllODExMWU2MmU0YjgyYmM0NjYxNzVhY2UiLCJ0IjoiZjI2ZjVkYjMtYTVjNC00NTgwLWJiODQtYjNhNTllNjcxODQ1IiwicyI6IlpqTmpPRFUwWkdZdE1XWmhNQzAwTnpVNExXSmhOak10TnpGbFpEUXlNVFZqTVdWaSJ9"
+    #command: tunnel --no-autoupdate run --token "eyJhIjoiMTcxMTI5ODllODExMWU2MmU0YjgyYmM0NjYxNzVhY2UiLCJ0IjoiZjI2ZjVkYjMtYTVjNC00NTgwLWJiODQtYjNhNTllNjcxODQ1IiwicyI6IlpqTmpPRFUwWkdZdE1XWmhNQzAwTnpVNExXSmhOak10TnpGbFpEUXlNVFZqTVdWaSJ9" # PROD TUNNEL
+    command: tunnel --no-autoupdate run --token "eyJhIjoiMTcxMTI5ODllODExMWU2MmU0YjgyYmM0NjYxNzVhY2UiLCJ0IjoiZDAxNDE3ZDMtNDc0OC00OTI5LTk4MTktMjA4MjQ0OGQ0MGY4IiwicyI6IlkyUXlZbU5qWkRjdE9XRXhNaTAwTlRKaUxUaG1aalF0WTJNd1pXSTBNalF4TTJReCJ9" # DEV TUNNEL
     networks:
       - pineapple-net
 

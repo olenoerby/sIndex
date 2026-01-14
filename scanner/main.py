@@ -48,6 +48,16 @@ def normalize(name: str) -> str:
     return name.lower().strip().lstrip('/').lstrip('r/').replace('\n','')
 
 
+def format_ts(ts: int) -> str:
+    """Format a unix timestamp (seconds) as YYYY-MM-DD; return 'none' if falsy."""
+    try:
+        if not ts:
+            return 'none'
+        return datetime.utcfromtimestamp(int(ts)).strftime('%Y-%m-%d')
+    except Exception:
+        return str(ts)
+
+
 # Comma-separated list of subreddit names to ignore. Defaults include a couple examples.
 # Set `IGNORE_SUBREDDITS` in the environment to override (comma-separated).
 IGNORE_SUBREDDITS = set(
@@ -192,7 +202,13 @@ def extract_subreddits_from_text(text: str):
 
 
 def process_post(post_item, session: Session):
-    """Process a single reddit post item. Returns True if a Fap Friday post was processed (saved and scanned), False otherwise."""
+    """Process a single reddit post item.
+
+    Returns a tuple (processed: bool, discovered_subreddits: set).
+    `processed` is True when the post was a Fap Friday post and was handled
+    (even if skipped because already present). `discovered_subreddits` is the
+    set of subreddit names seen in new comments that may need metadata updates.
+    """
     data = post_item['data']
     reddit_id = data.get('id')
     title = data.get('title')
@@ -200,19 +216,19 @@ def process_post(post_item, session: Session):
     url = data.get('permalink')
     # Only consider Fap Friday posts by title
     if 'fap friday' not in (title or '').lower():
-        return False
+        return (False, set())
     # If post already exists, don't re-scan it here
     existing = session.query(models.Post).filter_by(reddit_post_id=reddit_id).first()
     if existing:
         logger.info(f"Post {reddit_id} already in DB, skipping comments")
-        return True
+        return (True, set())
 
     # fetch comments first so we can determine whether any are new
     try:
         comments_json = fetch_post_comments(reddit_id)
     except Exception as e:
         logger.exception(f"Failed to fetch comments for {reddit_id}: {e}")
-        return True
+        return (True, set())
 
     found = []
     walk_comments(comments_json, found)
@@ -231,7 +247,7 @@ def process_post(post_item, session: Session):
             increment_analytics(session, posts=1)
         except Exception:
             logger.debug('Failed to increment analytics for post')
-        return True
+        return (True, set())
 
     # Determine which comments are not yet stored
     missing = []
@@ -242,7 +258,7 @@ def process_post(post_item, session: Session):
     # If all comments are already scanned, skip this post entirely
     if not missing:
         logger.info(f"All comments for post {reddit_id} already scanned, skipping post")
-        return True
+        return (True, set())
 
     # At least one new comment exists — create the post and persist only missing comments
     post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
@@ -257,6 +273,8 @@ def process_post(post_item, session: Session):
         increment_analytics(session, posts=1)
     except Exception:
         logger.debug('Failed to increment analytics for post')
+
+    discovered = set()
 
     for c in missing:
         # extract subreddits first; only persist comment if at least one subreddit mention exists
@@ -291,11 +309,8 @@ def process_post(post_item, session: Session):
                     increment_analytics(session, subreddits=1)
                 except Exception:
                     logger.debug('Failed to increment analytics for new subreddit')
-                # fetch metadata synchronously for discovery (rate-limited respected inside fetch)
-                try:
-                    update_subreddit_metadata(session, sub)
-                except Exception:
-                    session.rollback()
+                # mark for metadata fetch later
+                discovered.add(sname)
             else:
                 # Log existence so operator sees when we encounter already-known subreddits
                 try:
@@ -304,7 +319,15 @@ def process_post(post_item, session: Session):
                     logger.debug(f"Encountered /r/{sname} (logging failed)")
                 # ensure metadata is refreshed on discovery if stale
                 try:
-                    update_subreddit_metadata(session, sub)
+                    # if metadata looks stale or missing, schedule refresh
+                    now = datetime.utcnow()
+                    needs = False
+                    if not sub.display_name and not sub.title and not sub.public_description_html and not sub.subscribers:
+                        needs = True
+                    elif sub.last_checked is None or (now - sub.last_checked) >= timedelta(days=SUBREDDIT_META_CACHE_DAYS):
+                        needs = True
+                    if needs:
+                        discovered.add(sname)
                 except Exception:
                     session.rollback()
 
@@ -322,9 +345,9 @@ def process_post(post_item, session: Session):
                 # Log that the subreddit was mentioned and whether we changed first_mentioned
                 try:
                     if updated:
-                        logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - first_mentioned updated from {old_val} to {sub.first_mentioned}")
+                        logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - first_mentioned updated from {format_ts(old_val)} to {format_ts(sub.first_mentioned)}")
                     else:
-                        logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - no change to first_mentioned")
+                        logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - no change to first_mentioned ({format_ts(sub.first_mentioned)})")
                 except Exception:
                     # logging should not block processing
                     logger.debug(f"Mention processed for /r/{sname} (comment {c.get('id')})")
@@ -356,7 +379,7 @@ def process_post(post_item, session: Session):
                     session.rollback()
             except Exception:
                 session.rollback()
-    return True
+    return (True, discovered)
 
 
 def update_subreddit_metadata(session: Session, sub: models.Subreddit):
@@ -483,19 +506,37 @@ def main_loop():
                 time.sleep(600)
                 continue
             with Session(engine) as session:
+                discovered_overall = set()
                 for p in children:
                     # If TEST_POST_IDS is set, skip posts not in the list
                     pid = p.get('data', {}).get('id')
                     if TEST_POST_IDS and pid not in TEST_POST_IDS:
                         continue
-                    processed = process_post(p, session)
+                    processed, discovered = process_post(p, session)
                     if processed:
                         processed_count += 1
+                    if discovered:
+                        discovered_overall.update(discovered)
                     # If TEST_POST_LIMIT is set, exit once we've processed that many Friday posts
                     if TEST_POST_LIMIT and processed_count >= TEST_POST_LIMIT:
                         logger.info(f"Reached TEST_POST_LIMIT={TEST_POST_LIMIT}, exiting.")
                         return
-                # metadata updates are handled by the background metadata worker
+
+                # After processing posts in this batch, refresh subreddit metadata for
+                # all discovered or-stale subreddits in one pass to reduce frequent
+                # synchronous per-mention requests.
+                if discovered_overall:
+                    logger.info(f"Refreshing metadata for {len(discovered_overall)} subreddits discovered in this batch")
+                    for sname in discovered_overall:
+                        try:
+                            sub = session.query(models.Subreddit).filter_by(name=sname).first()
+                            if sub:
+                                try:
+                                    update_subreddit_metadata(session, sub)
+                                except Exception:
+                                    session.rollback()
+                        except Exception:
+                            logger.exception(f"Failed to refresh metadata for /r/{sname}")
             # pagination
             after = data.get('data', {}).get('after')
             if not after:

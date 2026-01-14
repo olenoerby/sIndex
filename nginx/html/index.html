@@ -18,6 +18,7 @@
     button{cursor:pointer}
     .btn{border:0;padding:8px 12px;border-radius:10px;background:#eef2ff;color:var(--accent);font-weight:600}
     .btn:hover{filter:brightness(.98);box-shadow:0 4px 14px rgba(37,99,235,0.12)}
+    .btn-no-bold{font-weight:400;font-size:1rem;line-height:1.2}
     .btn-ghost{background:transparent;border:1px solid #e6e6e6;color:inherit}
     .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(15,23,42,0.04)}
     table{width:100%;border-collapse:collapse;margin-top:12px}
@@ -34,6 +35,7 @@
       .controls{flex-direction:column;align-items:stretch}
       .controls > *{width:100%}
       .controls label{display:flex;justify-content:space-between;align-items:center}
+      .header-count{display:none}
     }
     .table-wrap{overflow:auto}
     th.sticky{position:sticky;top:0;background:var(--card);z-index:2}
@@ -41,12 +43,13 @@
     .not-found{color:#6b7280;font-style:italic}
     /* column helper classes */
     .col-name,.col-title,.col-mentions,.col-subscribers,.col-active_users,.col-first_mentioned,.col-last_checked,.col-description{}
+    .info-btn{margin-left:6px;min-width:44px;height:28px;border-radius:8px;font-weight:700;font-size:13px;padding:2px 8px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e6e6e6;background:var(--card);color:var(--muted);cursor:pointer}
+    .info-btn:hover{box-shadow:0 2px 8px rgba(0,0,0,0.06)}
   </style>
 </head>
 <body>
-  <h1><a href="/" style="color:inherit;text-decoration:none">Pineapple Index</a><span id="headerSubCount" class="header-count">- 0 Subreddits found</span></h1>
-  <p class="muted" style="margin-top:6px">This website does not save site data on your device.<br>
-    A tribute to <a href="https://www.reddit.com/user/WeirdPineapple" target="_blank" rel="noopener noreferrer">/u/WeirdPineapple</a> — thank you for your contributions!</p>
+  <h1><a href="/" style="color:inherit;text-decoration:none">Pineapple Index</a><button id="explainBtn" class="info-btn" title="Explanation" aria-label="Explanation">Explanation</button><span id="headerSubCount" class="header-count">0 Unique subreddits scanned</span></h1>
+  <p class="muted" style="margin-top:6px">A tribute to <a href="https://www.reddit.com/user/WeirdPineapple" target="_blank" rel="noopener noreferrer">/u/WeirdPineapple</a> — thank you for your contributions!</p>
 
       <div class="container">
         <div class="controls card">
@@ -55,22 +58,15 @@
               <input id="q" maxlength="200" placeholder="Search name, title or description" style="width:100%;padding-right:34px;box-sizing:border-box" />
               <button id="clearQuery" title="Clear search" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;font-size:14px;display:none;color:var(--muted)">✕</button>
             </div>
-            <button id="reload" class="btn btn-ghost" style="margin-left:8px">Refresh</button>
-            <button id="filterBtn" class="btn btn-ghost" style="margin-left:8px">Filters ▾</button>
+            <button id="reload" class="btn btn-ghost btn-no-bold" title="Reload" style="margin-left:8px">↻</button>
           </div>
           <div class="controls-row controls-row--actions">
-            <label style="margin-right:12px">Open link to
-              <select id="listing" style="margin-left:6px">
-                <option value="hot" selected>Hot</option>
-                <option value="top">Top</option>
-                <option value="best">Best</option>
-                <option value="new">New</option>
-                <option value="rising">Rising</option>
-              </select>
-            </label>
+            <!-- Listing and Sort moved to Options popout -->
             <div style="margin-right:auto" class="muted" id="loading"></div>
+            <button id="filterBtn" class="btn btn-ghost" style="margin-left:8px">Filters ▾</button>
+            <button id="optionsBtn" class="btn btn-ghost" style="margin-left:8px">Options ▾</button>
             <button id="sortDir" class="btn">Sort: Desc</button>
-            <button id="resetFilters" class="btn btn-ghost">Reset filters</button>
+            <button id="resetFilters" class="btn btn-ghost">Reset</button>
           </div>
         </div>
         <!-- Filter popout: positioned relative to .controls (absolute placement) -->
@@ -91,9 +87,38 @@
             </div>
           </div>
         </div>
+        <!-- Options popout for mobile: will hold Sort and Link Opens To when on small screens -->
+        <div id="optionsPop" style="display:none;position:absolute;z-index:60;min-width:260px;right:12px;top:64px;padding:10px;border-radius:10px;background:var(--card);box-shadow:0 8px 30px rgba(2,6,23,0.08)">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="margin-right:12px;display:flex;justify-content:space-between;align-items:center">Link opens to:
+              <select id="listing" style="margin-left:6px">
+                <option value="" selected>Default</option>
+                <option value="hot">Hot</option>
+                <option value="top/?t=all">Top - All time</option>
+                <option value="best">Best</option>
+                <option value="new">New</option>
+                <option value="rising">Rising</option>
+              </select>
+            </label>
+            <label style="margin-right:12px;display:flex;justify-content:space-between;align-items:center">Sort by:
+              <select id="sortSelect" style="margin-left:6px">
+                <option value="mentions">Mentions</option>
+                <option value="subscribers">Subscribers</option>
+                <option value="active_users">Active users</option>
+                <option value="created_utc">Created</option>
+                <option value="first_mentioned">First mentioned</option>
+                <option value="display_name_prefixed">Display name</option>
+                <option value="title">Title</option>
+                <option value="description">Description</option>
+                <option value="name">Name</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
 
       <div class="muted" id="count"></div>
+      <div id="paginationControls" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"></div>
       <div class="table-wrap card" style="padding:0;margin-top:12px">
       <table id="tbl">
     <thead>
@@ -114,9 +139,78 @@
 
   <script>
     let data = [];
-    let totalCount = 0;
+    let filteredCount = 0; // number matching current filters (from server)
+    let dbTotal = 0; // total number of subreddits in DB
+    let currentPage = 1;
+    let perPage = (window.innerWidth <= 800) ? 25 : 50; // smaller pages on mobile
     let currentSort = 'mentions';
     let currentSortDir = 'desc'; // 'asc' or 'desc'
+    let prefs = {};
+    let randomOrder = null; // array of subreddit names preserving a shuffled order
+
+    function setCookie(name, value, days){
+      let expires = '';
+      if(days){
+        const d = new Date(); d.setTime(d.getTime() + (days*24*60*60*1000));
+        expires = '; expires=' + d.toUTCString();
+      }
+      document.cookie = name + '=' + value + expires + '; path=/';
+    }
+    function getCookie(name){
+      const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+      return v ? v.pop() : '';
+    }
+
+    function savePrefs(){
+      try{
+        const p = {
+          minMentions: document.getElementById('minMentions') ? document.getElementById('minMentions').value : '',
+          maxMentions: document.getElementById('maxMentions') ? document.getElementById('maxMentions').value : '',
+          minSubscribers: document.getElementById('minSubscribers') ? document.getElementById('minSubscribers').value : '',
+          maxSubscribers: document.getElementById('maxSubscribers') ? document.getElementById('maxSubscribers').value : '',
+          showAvailable: document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : false,
+          showBanned: document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : false,
+          showNSFW: document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : false,
+          showNonNSFW: document.getElementById('showNonNSFW') ? !!document.getElementById('showNonNSFW').checked : false,
+          listing: document.getElementById('listing') ? document.getElementById('listing').value : '',
+          currentSort, currentSortDir,
+          randomOrder: randomOrder || null
+        };
+        setCookie('pineapple_prefs', encodeURIComponent(JSON.stringify(p)), 365);
+      }catch(e){ /* ignore */ }
+    }
+
+    function loadPrefs(){
+      try{
+        const c = getCookie('pineapple_prefs');
+        if(!c) return;
+        const p = JSON.parse(decodeURIComponent(c));
+        prefs = p || {};
+        if(document.getElementById('minMentions')) document.getElementById('minMentions').value = prefs.minMentions || '';
+        if(document.getElementById('maxMentions')) document.getElementById('maxMentions').value = prefs.maxMentions || '';
+        if(document.getElementById('minSubscribers')) document.getElementById('minSubscribers').value = prefs.minSubscribers || '';
+        if(document.getElementById('maxSubscribers')) document.getElementById('maxSubscribers').value = prefs.maxSubscribers || '';
+        if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = !!prefs.showAvailable;
+        if(document.getElementById('showBanned')) document.getElementById('showBanned').checked = !!prefs.showBanned;
+        if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = !!prefs.showNSFW;
+        if(document.getElementById('showNonNSFW')) document.getElementById('showNonNSFW').checked = !!prefs.showNonNSFW;
+        if(document.getElementById('listing')) document.getElementById('listing').value = prefs.listing || '';
+        if(prefs.currentSort) currentSort = prefs.currentSort;
+        if(prefs.currentSortDir) currentSortDir = prefs.currentSortDir;
+        // reflect saved sort selection in dropdown
+        if(document.getElementById('sortSelect')) document.getElementById('sortSelect').value = currentSort;
+        if(prefs.randomOrder && Array.isArray(prefs.randomOrder)) randomOrder = prefs.randomOrder;
+      }catch(e){ /* ignore malformed cookie */ }
+    }
+
+    function generateRandomOrderFromList(list){
+      randomOrder = list.map(s=>s.name);
+      for (let i = randomOrder.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [randomOrder[i], randomOrder[j]] = [randomOrder[j], randomOrder[i]];
+      }
+      savePrefs();
+    }
 
     function updateColumnVisibility(list){
       try{
@@ -140,31 +234,87 @@
       return d.textContent || d.innerText || '';
     }
 
-    async function loadAll(){
+    // Load a single page from the API (server-side pagination)
+    async function loadPage(page = 1){
       document.getElementById('count').textContent = 'Loading...';
-      // indicate loading in the small status area as plain text
-      document.getElementById('loading').textContent = 'Loading...';
+      const loadingDiv = document.getElementById('loading');
+      loadingDiv.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+      setControlsDisabled(true);
       try{
-        data = [];
-        let page = 1;
-        const per = 500; // API cap; iterate pages until has_more false
-        for(;;){
-          const res = await fetch(`/subreddits?page=${page}&per_page=${per}&sort=${encodeURIComponent(currentSort)}`);
-          if(!res.ok) throw new Error('HTTP '+res.status);
-          const json = await res.json();
-          const items = json.items || [];
-          data = data.concat(items);
-          totalCount = json.total || 0;
-          document.getElementById('count').textContent = `${totalCount} in database — ${data.length} loaded`;
-          if(!json.has_more) break;
-          page += 1;
-        }
-        document.getElementById('loading').textContent = '';
+        const qparams = buildFilterQueryParams();
+        const res = await fetch(`/subreddits?page=${page}&per_page=${perPage}&sort=${encodeURIComponent(currentSort)}&sort_dir=${encodeURIComponent(currentSortDir)}${qparams}`);
+        if(!res.ok) throw new Error('HTTP '+res.status);
+        const json = await res.json();
+        data = json.items || [];
+        filteredCount = json.total || 0;
+        currentPage = page;
+        loadingDiv.innerHTML = '';
         render();
+        renderPaginationControls();
+        setControlsDisabled(false);
       }catch(e){
         document.getElementById('count').textContent = 'Load failed: ' + e;
-        document.getElementById('loading').textContent = '';
+        loadingDiv.innerHTML = '';
+        setControlsDisabled(false);
       }
+    }
+
+    function buildFilterQueryParams(){
+      try{
+        const parts = [];
+        const q = (document.getElementById('q') && document.getElementById('q').value) ? String(document.getElementById('q').value).trim() : '';
+        if(q) parts.push('q=' + encodeURIComponent(q));
+        const mm = document.getElementById('minMentions') ? document.getElementById('minMentions').value : '';
+        if(mm) parts.push('min_mentions=' + encodeURIComponent(mm));
+        const mM = document.getElementById('maxMentions') ? document.getElementById('maxMentions').value : '';
+        if(mM) parts.push('max_mentions=' + encodeURIComponent(mM));
+        const ms = document.getElementById('minSubscribers') ? document.getElementById('minSubscribers').value : '';
+        if(ms) parts.push('min_subscribers=' + encodeURIComponent(ms));
+        const mS = document.getElementById('maxSubscribers') ? document.getElementById('maxSubscribers').value : '';
+        if(mS) parts.push('max_subscribers=' + encodeURIComponent(mS));
+        const showAvailable = document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : null;
+        const showBanned = document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : null;
+        const showNSFW = document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : null;
+        const showNonNSFW = document.getElementById('showNonNSFW') ? !!document.getElementById('showNonNSFW').checked : null;
+        if(showAvailable !== null) parts.push('show_available=' + (showAvailable ? 'true' : 'false'));
+        if(showBanned !== null) parts.push('show_banned=' + (showBanned ? 'true' : 'false'));
+        if(showNSFW !== null) parts.push('show_nsfw=' + (showNSFW ? 'true' : 'false'));
+        if(showNonNSFW !== null) parts.push('show_non_nsfw=' + (showNonNSFW ? 'true' : 'false'));
+        return parts.length ? '&' + parts.join('&') : '';
+      }catch(e){ return ''; }
+    }
+
+    // Disable/enable interactive controls while a server request is in progress
+    function setControlsDisabled(disabled){
+      try{
+        document.querySelectorAll('#paginationControls button, #paginationControls select, #paginationControls input').forEach(el => el.disabled = disabled);
+        const maybe = ['reload','filterBtn','sortDir','resetFilters','listing','sortSelect'];
+        maybe.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = disabled; });
+      }catch(e){/* ignore */}
+    }
+
+    function renderPaginationControls(){
+      const ctr = document.getElementById('paginationControls');
+      if(!ctr) return;
+      ctr.innerHTML = '';
+      const totalPages = Math.max(1, Math.ceil((filteredCount || 0) / perPage));
+      const prev = document.createElement('button'); prev.className = 'btn btn-ghost'; prev.textContent = '◀ Prev';
+      prev.disabled = currentPage <= 1;
+      prev.addEventListener('click', ()=>{ if(currentPage>1) loadPage(currentPage-1); });
+      const next = document.createElement('button'); next.className = 'btn btn-ghost'; next.textContent = 'Next ▶';
+      next.disabled = currentPage >= totalPages;
+      next.addEventListener('click', ()=>{ if(currentPage<totalPages) loadPage(currentPage+1); });
+      const pageInfo = document.createElement('div'); pageInfo.className = 'muted'; pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
+      const perSel = document.createElement('select'); perSel.style.marginLeft = '8px'; perSel.innerHTML = '<option value="25">25</option><option value="50">50</option><option value="100">100</option>';
+      perSel.value = String(perPage);
+      perSel.addEventListener('change', ()=>{ perPage = Number(perSel.value); loadPage(1); });
+      const goto = document.createElement('input'); goto.type='number'; goto.min=1; goto.style.width='72px'; goto.placeholder='Go to page'; goto.addEventListener('change', ()=>{ const v = Number(goto.value||0); if(v>=1 && v<=totalPages) loadPage(v); });
+      ctr.appendChild(prev);
+      ctr.appendChild(pageInfo);
+      ctr.appendChild(next);
+      ctr.appendChild(document.createTextNode(' per page:'));
+      ctr.appendChild(perSel);
+      ctr.appendChild(goto);
     }
 
     function updateSortedHeader(){
@@ -174,6 +324,7 @@
         });
         const sortLabel = (currentSortDir === 'random') ? 'Random' : (currentSortDir === 'desc' ? 'Desc' : 'Asc');
         document.getElementById('sortDir').textContent = 'Sort: ' + sortLabel;
+        if(document.getElementById('sortSelect')) document.getElementById('sortSelect').value = currentSort;
       }catch(e){/* ignore */}
     }
 
@@ -233,8 +384,9 @@
       // NSFW filtering using two independent toggles:
       // - If either is checked, include only matching groups.
       // - If neither is checked, include all.
+      // Treat NULL/undefined as NSFW; only explicit `false` is non-NSFW.
       if(showNSFW || showNonNSFW){
-        list = list.filter(s => (showNSFW && (s.over18 !== false)) || (showNonNSFW && s.over18 === false));
+        list = list.filter(s => (showNSFW && (s.over18 === true || s.over18 == null)) || (showNonNSFW && s.over18 === false));
       }
       list = list.filter(s => (s.mentions||0) >= minM);
       if(Number.isFinite(maxM)){
@@ -246,26 +398,9 @@
         list = list.filter(s => (s.subscribers||0) <= maxS);
       }
 
-      if(currentSortDir === 'random'){
-        for (let i = list.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [list[i], list[j]] = [list[j], list[i]];
-        }
-      } else {
-        list.sort((a,b)=>{
-          const key = sort;
-          const va = (a[key]===null||a[key]===undefined)?0:a[key];
-          const vb = (b[key]===null||b[key]===undefined)?0:b[key];
-          if(typeof va === 'string' || typeof vb === 'string'){
-            const sa = String(va).toLowerCase();
-            const sb = String(vb).toLowerCase();
-            if(sa < sb) return currentSortDir === 'desc' ? 1 : -1;
-            if(sa > sb) return currentSortDir === 'desc' ? -1 : 1;
-            return 0;
-          }
-          return currentSortDir === 'desc' ? (vb - va) : (va - vb);
-        });
-      }
+      // Server provides ordered results based on `sort` and `sort_dir` parameters.
+      // Do not re-sort the page client-side; preserve server ordering and only
+      // apply client-side filters/search on the returned page of rows.
 
       const tbody = document.querySelector('#tbl tbody');
       tbody.innerHTML = '';
@@ -274,8 +409,13 @@
         const nameTd = document.createElement('td');
         nameTd.classList.add('col-name');
         const a = document.createElement('a');
-        const listing = (document.getElementById('listing') && document.getElementById('listing').value) || 'hot';
-        a.href = `https://www.reddit.com/r/${encodeURIComponent(s.name)}/${listing}`;
+        const listingEl = document.getElementById('listing');
+        const listing = listingEl ? listingEl.value : '';
+        if(listing){
+          a.href = `https://www.reddit.com/r/${encodeURIComponent(s.name)}/${listing}`;
+        } else {
+          a.href = `https://www.reddit.com/r/${encodeURIComponent(s.name)}`;
+        }
         a.dataset.name = s.name;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
@@ -373,44 +513,145 @@
         tr.appendChild(descTd);
         tbody.appendChild(tr);
       }
-      document.getElementById('count').textContent = `${totalCount} in database (${data.length} loaded) — ${list.length} shown`;
-      // update header count as well
+      document.getElementById('count').textContent = `${filteredCount} filtered out of ${dbTotal} in database`;
+      // update header count as well (show overall DB total)
       const hc = document.getElementById('headerSubCount');
-      if(hc) hc.textContent = `- ${totalCount} Unique subreddits scanned`;
+      if(hc) hc.textContent = `${dbTotal} Unique subreddits scanned`;
       updateColumnVisibility(list);
+      // Persist current filter/sort/listing preferences so back-navigation preserves state
+      try{ savePrefs(); }catch(e){}
     }
 
     // Periodically refresh the total subreddit count without reloading the page.
     async function refreshTotalCount(){
       try{
-        const res = await fetch(`/subreddits?page=1&per_page=1`);
+        // Get overall DB totals from /stats so we can show "filtered out of X in database"
+        const res = await fetch('/stats');
         if(!res.ok) return;
         const json = await res.json();
-        const newTotal = json.total || 0;
-        if(newTotal !== totalCount){
-          totalCount = newTotal;
+        const newDbTotal = json.total_subreddits || 0;
+        if(newDbTotal !== dbTotal){
+          dbTotal = newDbTotal;
         }
-        const shown = document.querySelectorAll('#tbl tbody tr').length;
-        document.getElementById('count').textContent = `${totalCount} in database (${data.length} loaded) — ${shown} shown`;
+        // update displayed counts
+        document.getElementById('count').textContent = `${filteredCount} filtered out of ${dbTotal} in database`;
         const hc = document.getElementById('headerSubCount');
-        if(hc) hc.textContent = `- ${totalCount} Unique subreddits scanned`;
+        if(hc) hc.textContent = `${dbTotal} Unique subreddits scanned`;
       }catch(e){ /* ignore errors */ }
     }
 
-    // refresh every 10 seconds
+    // refresh every 10 seconds and once immediately
     setInterval(refreshTotalCount, 10000);
+    refreshTotalCount();
+
+    // debounce utility for input-driven requests
+    function debounce(fn, wait){
+      let t = null;
+      return function(...args){
+        if(t) clearTimeout(t);
+        t = setTimeout(()=> fn.apply(this, args), wait);
+      };
+    }
+
+    // Debounced loader used for frequent input changes (typing)
+    const debouncedLoadPage = debounce(()=>{ try{ savePrefs(); }catch(e){} loadPage(1); }, 350);
 
     const qEl = document.getElementById('q');
     const clearQueryBtn = document.getElementById('clearQuery');
     if(qEl){
       qEl.addEventListener('input', (e)=>{
         try{ clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'inline' : 'none'; }catch(e){}
-        render();
+        debouncedLoadPage();
       });
     }
     if(clearQueryBtn){
-      clearQueryBtn.addEventListener('click', ()=>{ qEl.value = ''; clearQueryBtn.style.display = 'none'; render(); });
+      clearQueryBtn.addEventListener('click', ()=>{ qEl.value = ''; clearQueryBtn.style.display = 'none'; try{ savePrefs(); }catch(e){} loadPage(1); });
     }
+
+    // Explanation button: opens modal; move between header and filter popout on resize
+    (function(){
+      const explainId = 'explainBtn';
+      const infoText = 'How data is collected:\n\n- The scanner periodically reads recent Reddit posts and extracts references to subreddits.\n- Mentioned subreddits are recorded when a subreddit URL is named in a post or comment the scanner processes.\n\nWhat "Unique mentions" means:\n\n- This is the count of distinct subreddits detected in the collected data.\n\nUpdate frequency:\n\n- The scanner runs on a schedule (configured in deployment). The site reflects the last scanner run.';
+
+      function ensureButton(){
+        let btn = document.getElementById(explainId);
+        if(!btn){
+          btn = document.createElement('button');
+          btn.id = explainId;
+          btn.className = 'info-btn';
+          btn.title = 'Explanation';
+          btn.setAttribute('aria-label','Explanation');
+          btn.textContent = 'Explanation';
+          // default place in header if possible
+          const h = document.querySelector('h1');
+          if(h) h.insertBefore(btn, document.getElementById('headerSubCount'));
+        }
+        btn.onclick = ()=> openDescriptionModal(infoText);
+        return btn;
+      }
+
+      function placeExplainButton(){
+        const btn = ensureButton();
+        const filterPop = document.getElementById('filterPop');
+        // mobile: move into filter popout (menu); desktop: place in header and push right
+        if(window.innerWidth <= 800 && filterPop){
+          if(filterPop.contains(btn)) return;
+          filterPop.insertBefore(btn, filterPop.firstChild);
+          btn.style.marginLeft = '';
+        } else {
+          const h = document.querySelector('h1');
+          if(!h) return;
+          if(h.contains(btn)){
+            // ensure pushed to right
+            btn.style.marginLeft = 'auto';
+            return;
+          }
+          h.insertBefore(btn, document.getElementById('headerSubCount'));
+          btn.style.marginLeft = 'auto';
+        }
+      }
+
+      // initial placement and react to resize
+      placeExplainButton();
+      window.addEventListener('resize', ()=>{ placeExplainButton(); placeOptionsButton(); });
+    })();
+    // Options popout: move the sort/listing labels into the popout on mobile
+    (function(){
+      const optionsId = 'optionsBtn';
+      const optionsPopId = 'optionsPop';
+      function ensureOptionsButton(){
+        let btn = document.getElementById(optionsId);
+        return btn;
+      }
+
+      function placeOptionsButton(){
+        // Options button is always visible; controls are authored inside
+        // the options popout in the HTML, so no dynamic moving/cloning is required.
+        const btn = ensureOptionsButton();
+        if(btn) btn.style.display = '';
+      }
+
+      // toggle behavior for the options popout
+      const optionsBtn = document.getElementById('optionsBtn');
+      const optionsPop = document.getElementById('optionsPop');
+      if(optionsBtn && optionsPop){
+        optionsBtn.addEventListener('click', (ev)=>{
+          ev.stopPropagation();
+          const newState = (optionsPop.style.display === 'block') ? 'none' : 'block';
+          optionsPop.style.display = newState;
+          // if opening options, close the filter popout
+          if(newState === 'block'){
+            const filterPopEl = document.getElementById('filterPop');
+            if(filterPopEl) filterPopEl.style.display = 'none';
+          }
+        });
+        document.addEventListener('click', (ev)=>{ if(optionsPop.style.display === 'block' && !optionsPop.contains(ev.target) && ev.target !== optionsBtn) optionsPop.style.display = 'none'; });
+        optionsPop.addEventListener('click', (ev)=> ev.stopPropagation());
+      }
+      // initial placement and resize handler
+      placeOptionsButton();
+      window.addEventListener('resize', ()=>{ placeOptionsButton(); });
+    })();
     // header click sorting: set sort key and toggle direction if same key
     document.querySelectorAll('th[data-sort]').forEach(th => {
       th.style.cursor = 'pointer';
@@ -424,44 +665,48 @@
           currentSortDir = 'desc';
         }
         updateSortedHeader();
-        render();
+        // Request the current page from the server using the new sort so pagination reflects it
+        // Request current page using server-side sorting
+        if(document.getElementById('sortSelect')) document.getElementById('sortSelect').value = currentSort;
+        savePrefs();
+        loadPage(currentPage);
       });
     });
     document.getElementById('minMentions').addEventListener('input', (e) => {
       const el = e.target;
       const val = Number(el.value || 0);
       if (!Number.isFinite(val) || val < 0) el.value = 0;
-      render();
+      debouncedLoadPage();
     });
     const maxEl = document.getElementById('maxMentions');
     if(maxEl){
       maxEl.addEventListener('input', (e) => {
         const el = e.target;
-        if(el.value === ''){ render(); return; }
+        if(el.value === ''){ debouncedLoadPage(); return; }
         const val = Number(el.value || 0);
         if(!Number.isFinite(val) || val < 1) el.value = 1;
-        render();
+        debouncedLoadPage();
       });
     }
     // subscriber filters: validate and re-render on input
     const minSubsEl = document.getElementById('minSubscribers');
-    if(minSubsEl){
+      if(minSubsEl){
       minSubsEl.addEventListener('input', (e)=>{
         const el = e.target;
-        if(el.value === ''){ render(); return; }
+        if(el.value === ''){ debouncedLoadPage(); return; }
         const val = Number(el.value || 0);
         if(!Number.isFinite(val) || val < 0) el.value = 0;
-        render();
+        debouncedLoadPage();
       });
     }
     const maxSubsEl = document.getElementById('maxSubscribers');
     if(maxSubsEl){
       maxSubsEl.addEventListener('input', (e)=>{
         const el = e.target;
-        if(el.value === ''){ render(); return; }
+        if(el.value === ''){ debouncedLoadPage(); return; }
         const val = Number(el.value || 0);
         if(!Number.isFinite(val) || val < 0) el.value = 0;
-        render();
+        debouncedLoadPage();
       });
     }
 
@@ -469,7 +714,16 @@
     const filterBtn = document.getElementById('filterBtn');
     const filterPop = document.getElementById('filterPop');
     if(filterBtn && filterPop){
-      filterBtn.addEventListener('click', (ev)=>{ ev.stopPropagation(); filterPop.style.display = (filterPop.style.display === 'block') ? 'none' : 'block'; });
+      filterBtn.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        const newState = (filterPop.style.display === 'block') ? 'none' : 'block';
+        filterPop.style.display = newState;
+        // if opening filters, close the options popout
+        if(newState === 'block'){
+          const optionsPopEl = document.getElementById('optionsPop');
+          if(optionsPopEl) optionsPopEl.style.display = 'none';
+        }
+      });
       // close when clicking outside
       document.addEventListener('click', (ev)=>{
         if(filterPop.style.display === 'block' && !filterPop.contains(ev.target) && ev.target !== filterBtn){
@@ -487,7 +741,8 @@
           const mM = document.getElementById('maxMentions'); if(mM) mM.value = '';
           const ms = document.getElementById('minSubscribers'); if(ms) ms.value = '';
           const mS = document.getElementById('maxSubscribers'); if(mS) mS.value = '';
-          render();
+          try{ savePrefs(); }catch(e){}
+          loadPage(1);
         });
       }
       // wire show toggles and the popout Show/Hide-all button
@@ -504,10 +759,10 @@
         const snt = showNonNSFWEl ? showNonNSFWEl.checked : false;
         showAllBtn.textContent = (sa && sb && sn && snt) ? 'Hide all' : 'Show all';
       }
-      if(showAvailableEl) showAvailableEl.addEventListener('change', (e)=>{ render(); updateShowAllLabel(); });
-      if(showBannedEl) showBannedEl.addEventListener('change', (e)=>{ render(); updateShowAllLabel(); });
-      if(showNSFWEl) showNSFWEl.addEventListener('change', (e)=>{ render(); updateShowAllLabel(); });
-      if(showNonNSFWEl) showNonNSFWEl.addEventListener('change', (e)=>{ render(); updateShowAllLabel(); });
+      if(showAvailableEl) showAvailableEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
+      if(showBannedEl) showBannedEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
+      if(showNSFWEl) showNSFWEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
+      if(showNonNSFWEl) showNonNSFWEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
       if(showAllBtn){
         updateShowAllLabel();
         showAllBtn.addEventListener('click', ()=>{
@@ -522,17 +777,20 @@
           if(showNSFWEl) showNSFWEl.checked = newState;
           if(showNonNSFWEl) showNonNSFWEl.checked = newState;
           updateShowAllLabel();
-          render();
+          try{ savePrefs(); }catch(e){}
+          loadPage(1);
         });
       }
     }
-    document.getElementById('reload').addEventListener('click', loadAll);
+    document.getElementById('reload').addEventListener('click', ()=> loadPage(currentPage));
     document.getElementById('sortDir').addEventListener('click', ()=>{
       if(currentSortDir === 'desc') currentSortDir = 'asc';
       else if(currentSortDir === 'asc') currentSortDir = 'random';
       else currentSortDir = 'desc';
+      // Request current page using server-side sorting (server handles random ordering too)
       updateSortedHeader();
-      render();
+      savePrefs();
+      loadPage(currentPage);
     });
     
       document.getElementById('resetFilters').addEventListener('click', ()=>{
@@ -543,20 +801,35 @@
       document.getElementById('showBanned').checked = false;
       if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = true;
       if(document.getElementById('showNonNSFW')) document.getElementById('showNonNSFW').checked = false;
-      document.getElementById('listing').value = 'hot';
+      document.getElementById('listing').value = '';
       currentSort = 'mentions';
       currentSortDir = 'desc';
       updateSortedHeader();
-      render();
+      loadPage(1);
     });
 
     // when user changes the listing dropdown, update all subreddit links on the page
     document.getElementById('listing').addEventListener('change', ()=>{
       const val = document.getElementById('listing').value;
       document.querySelectorAll('#tbl tbody a[data-name]').forEach(a=>{
-        a.href = `https://www.reddit.com/r/${encodeURIComponent(a.dataset.name)}/${val}`;
+        if(val){
+          a.href = `https://www.reddit.com/r/${encodeURIComponent(a.dataset.name)}/${val}`;
+        } else {
+          a.href = `https://www.reddit.com/r/${encodeURIComponent(a.dataset.name)}`;
+        }
       });
+      try{ savePrefs(); }catch(e){}
     });
+    // wire sort dropdown to request server-side ordered pages
+    const sortSel = document.getElementById('sortSelect');
+    if(sortSel){
+      sortSel.addEventListener('change', ()=>{
+        currentSort = sortSel.value || 'mentions';
+        updateSortedHeader();
+        savePrefs();
+        loadPage(1);
+      });
+    }
 
     // modal for showing long descriptions
     function openDescriptionModal(htmlText){
@@ -607,9 +880,10 @@
       content.textContent = htmlText || '';
     }
 
-    // initial load: fetch all pages and render
+    // initial load: restore preferences, then fetch first page and render
+    loadPrefs();
     updateSortedHeader();
-    loadAll();
+    loadPage(1);
   </script>
 </body>
 </html>

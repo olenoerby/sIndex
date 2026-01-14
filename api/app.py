@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import create_engine, select, desc, func
+from sqlalchemy import create_engine, select, desc, func, text, literal_column
 from sqlalchemy.orm import Session
 from . import models
 
@@ -209,12 +209,34 @@ class SubredditOut(BaseModel):
 
 
 @app.get("/subreddits")
-def list_subreddits(page: int = 1, per_page: int = 50, sort: str = Query('mentions', regex='^(mentions|subscribers|active_users|created_utc|first_mentioned|name)$')):
+def list_subreddits(
+    page: int = 1,
+    per_page: int = 50,
+    sort: str = 'mentions',
+    sort_dir: str = 'desc',
+    random_seed: Optional[str] = None,
+    q: Optional[str] = None,
+    min_mentions: Optional[int] = None,
+    max_mentions: Optional[int] = None,
+    min_subscribers: Optional[int] = None,
+    max_subscribers: Optional[int] = None,
+    show_available: Optional[bool] = None,
+    show_banned: Optional[bool] = None,
+    show_nsfw: Optional[bool] = None,
+    show_non_nsfw: Optional[bool] = None,
+):
     # enforce sensible limits to avoid huge responses
     max_per = 500
     per_page = min(max_per, max(1, int(per_page)))
     page = max(1, int(page))
     offset = (page - 1) * per_page
+    # validate sort and sort_dir here to avoid FastAPI raising a 422
+    allowed_sorts = {'mentions','subscribers','active_users','created_utc','first_mentioned','name','display_name_prefixed','title','description','random'}
+    if not sort or sort not in allowed_sorts:
+        sort = 'mentions'
+    allowed_dirs = {'asc','desc','random'}
+    if not sort_dir or sort_dir not in allowed_dirs:
+        sort_dir = 'desc'
     with Session(engine) as session:
         # total count for pagination metadata: prefer analytics table if present
         try:
@@ -229,10 +251,73 @@ def list_subreddits(page: int = 1, per_page: int = 50, sort: str = Query('mentio
         subq = session.query(models.Subreddit, func.count(models.Mention.id).label('mentions'))\
             .join(models.Mention, models.Mention.subreddit_id == models.Subreddit.id, isouter=True)\
             .group_by(models.Subreddit.id)
-        if sort == 'mentions':
+
+        # Apply text search filter if provided
+        if q:
+            q_lower = f"%{q.lower()}%"
+            subq = subq.filter(
+                func.lower(models.Subreddit.name).like(q_lower) |
+                func.lower(models.Subreddit.display_name_prefixed).like(q_lower) |
+                func.lower(models.Subreddit.title).like(q_lower) |
+                func.lower(models.Subreddit.description).like(q_lower)
+            )
+
+        # Apply subscriber filters
+        if min_subscribers is not None:
+            subq = subq.filter((models.Subreddit.subscribers == None) | (models.Subreddit.subscribers >= int(min_subscribers)))
+        if max_subscribers is not None:
+            subq = subq.filter((models.Subreddit.subscribers == None) | (models.Subreddit.subscribers <= int(max_subscribers)))
+
+        # NSFW filters
+        # If client requests only NSFW: include rows where over18 is explicitly True OR NULL
+        # (treat untagged subreddits as NSFW by default).
+        if (show_nsfw is True) and (show_non_nsfw is not True):
+            subq = subq.filter((models.Subreddit.over18 == True) | (models.Subreddit.over18 == None))
+        # If client requests only non-NSFW: include only rows where over18 is explicitly False
+        if (show_non_nsfw is True) and (show_nsfw is not True):
+            subq = subq.filter(models.Subreddit.over18 == False)
+
+        # Banned/available filters
+        if (show_available is True) and (show_banned is not True):
+            subq = subq.filter((models.Subreddit.is_banned == False) | (models.Subreddit.is_banned == None))
+        if (show_banned is True) and (show_available is not True):
+            subq = subq.filter(models.Subreddit.is_banned == True)
+        # Apply mentions filters via HAVING (since mentions is an aggregate)
+        if min_mentions is not None:
+            subq = subq.having(func.count(models.Mention.id) >= int(min_mentions))
+        if max_mentions is not None:
+            subq = subq.having(func.count(models.Mention.id) <= int(max_mentions))
+
+        # Compute total matching rows before applying ordering/limit
+        try:
+            subq_count = subq.with_labels().subquery()
+            total = int(session.query(func.count()).select_from(subq_count).scalar() or 0)
+        except Exception:
+            # Fallback to full count
+            total = int(session.query(func.count(models.Subreddit.id)).scalar() or 0)
+
+        # Apply server-side ordering. Support random ordering and asc/desc direction.
+        try:
+            if sort_dir == 'random' or sort == 'random':
+                    # Support stable random ordering when a client-supplied seed is provided.
+                    # If `random_seed` is present, order deterministically by md5(name || seed),
+                    # otherwise fall back to non-deterministic func.random().
+                    if random_seed:
+                        try:
+                            subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, literal_column("'" + str(random_seed).replace("'","''") + "'"))))
+                        except Exception:
+                            subq = subq.order_by(func.random())
+                    else:
+                        subq = subq.order_by(func.random())
+            else:
+                if sort == 'mentions':
+                    col = literal_column('mentions')
+                    subq = subq.order_by(desc(col) if sort_dir == 'desc' else col.asc())
+                else:
+                    col = getattr(models.Subreddit, sort)
+                    subq = subq.order_by(desc(col) if sort_dir == 'desc' else col.asc())
+        except Exception:
             subq = subq.order_by(desc('mentions'))
-        else:
-            subq = subq.order_by(desc(getattr(models.Subreddit, sort)))
 
         rows = subq.offset(offset).limit(per_page).all()
         items = []
@@ -333,6 +418,112 @@ def list_subreddits(page: int = 1, per_page: int = 50, sort: str = Query('mentio
         return {"items": items, "total": total, "page": page, "per_page": per_page, "has_more": has_more}
 
 
+@app.get("/health")
+def health():
+    """Liveness and DB connectivity check."""
+    with Session(engine) as session:
+        try:
+            # simple DB op
+            _ = session.query(func.count(models.Subreddit.id)).limit(1).scalar()
+            return {"ok": True, "db": True}
+        except Exception as e:
+            api_logger.exception("DB health check failed")
+            return {"ok": True, "db": False, "error": str(e)}
+
+
+@app.get("/stats")
+def stats():
+    """Aggregate statistics about the dataset.
+
+    Returns analytics row if present, otherwise computes counts.
+    """
+    with Session(engine) as session:
+        out = {}
+        try:
+            analytics = session.query(models.Analytics).first()
+            if analytics:
+                out.update({
+                    "total_subreddits": int(analytics.total_subreddits or 0),
+                    "total_posts": int(analytics.total_posts or 0),
+                    "total_comments": int(analytics.total_comments or 0),
+                    "total_mentions": int(analytics.total_mentions or 0),
+                    "analytics_updated_at": getattr(analytics, 'updated_at', None)
+                })
+            # ensure we always include current last_scanned
+            last_scanned = session.query(func.max(models.Subreddit.last_checked)).scalar()
+            out["last_scanned"] = last_scanned
+        except Exception:
+            api_logger.exception("Failed to compute stats")
+        # fallback to individual counts if analytics missing
+        try:
+            if 'total_subreddits' not in out:
+                out['total_subreddits'] = int(session.query(func.count(models.Subreddit.id)).scalar() or 0)
+            if 'total_mentions' not in out:
+                out['total_mentions'] = int(session.query(func.count(models.Mention.id)).scalar() or 0)
+            if 'total_posts' not in out:
+                out['total_posts'] = int(session.query(func.count(models.Post.id)).scalar() or 0)
+            if 'total_comments' not in out:
+                out['total_comments'] = int(session.query(func.count(models.Comment.id)).scalar() or 0)
+        except Exception:
+            api_logger.exception("Failed to compute fallback stats")
+        return out
+
+
+@app.get("/subreddits/{name}/mentions")
+def subreddit_mentions(name: str, page: int = 1, per_page: int = 50):
+    """List mentions for a given subreddit (paginated)."""
+    per_page = max(1, min(500, int(per_page)))
+    page = max(1, int(page))
+    offset = (page - 1) * per_page
+    with Session(engine) as session:
+        s = session.query(models.Subreddit).filter(models.Subreddit.name == name.lower()).first()
+        if not s:
+            raise HTTPException(status_code=404, detail="Subreddit not found")
+        q = session.query(models.Mention).filter(models.Mention.subreddit_id == s.id).order_by(desc(models.Mention.timestamp))
+        total = int(session.query(func.count(models.Mention.id)).filter(models.Mention.subreddit_id == s.id).scalar() or 0)
+        rows = q.offset(offset).limit(per_page).all()
+        items = []
+        for m in rows:
+            items.append({
+                "id": m.id,
+                "comment_id": m.comment_id,
+                "post_id": m.post_id,
+                "user_id": m.user_id,
+                "timestamp": m.timestamp
+            })
+        return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
+@app.get("/random_sample")
+def random_sample(n: int = 10, seed: Optional[str] = None):
+    """Return `n` random subreddits. If `seed` is provided ordering is deterministic."""
+    n = max(1, min(500, int(n)))
+    with Session(engine) as session:
+        subq = session.query(models.Subreddit, func.count(models.Mention.id).label('mentions'))\
+            .join(models.Mention, models.Mention.subreddit_id == models.Subreddit.id, isouter=True)\
+            .group_by(models.Subreddit.id)
+        try:
+            if seed:
+                subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, literal_column("'" + str(seed).replace("'","''") + "'"))))
+            else:
+                subq = subq.order_by(func.random())
+        except Exception:
+            subq = subq.order_by(func.random())
+        rows = subq.limit(n).all()
+        items = []
+        for row in rows:
+            s, mentions = row
+            items.append({
+                "name": s.name,
+                "display_name_prefixed": s.display_name_prefixed,
+                "mentions": int(mentions or 0)
+            })
+        return {"items": items}
+
+
+# `POST /subreddits/refresh` endpoint removed per request.
+
+
 @app.get("/subreddits/{name}")
 def get_subreddit(name: str):
     with Session(engine) as session:
@@ -369,14 +560,4 @@ def stats_top(limit: int = 20):
         return [{"name": r[0], "mentions": r[1]} for r in rows]
 
 
-@app.get("/subreddits/count")
-def subreddits_count():
-    with Session(engine) as session:
-        try:
-            analytics = session.query(models.Analytics).first()
-            if analytics and getattr(analytics, 'total_subreddits', None) is not None:
-                return {"total": int(analytics.total_subreddits or 0)}
-        except Exception:
-            pass
-        total = session.query(func.count(models.Subreddit.id)).scalar()
-        return {"total": int(total or 0)}
+# Removed endpoint: GET /subreddits/count — use GET /stats for aggregated counts instead.
