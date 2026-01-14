@@ -45,6 +45,12 @@
     .col-name,.col-title,.col-mentions,.col-subscribers,.col-active_users,.col-first_mentioned,.col-last_checked,.col-description{}
     .info-btn{margin-left:6px;min-width:44px;height:28px;border-radius:8px;font-weight:700;font-size:13px;padding:2px 8px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e6e6e6;background:var(--card);color:var(--muted);cursor:pointer}
     .info-btn:hover{box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+    /* Age confirmation modal */
+    .age-modal-overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999}
+    .age-modal-box{background:var(--card);padding:22px;border-radius:12px;max-width:520px;width:92%;box-shadow:0 12px 40px rgba(2,6,23,0.3);text-align:left}
+    .age-modal-box h2{margin:0 0 8px 0;font-size:1.1rem}
+    .age-modal-box p{margin:0 0 14px;color:var(--muted)}
+    .age-modal-actions{display:flex;gap:8px;justify-content:flex-end}
   </style>
 </head>
 <body>
@@ -422,13 +428,15 @@
         list = [];
       } else {
         // First apply availability filtering (this determines available vs unavailable)
-        list = list.filter(s => {
-          const isNotFound = (s.not_found === true);
-          const isBanned = (s.is_banned === true);
-          const isUnavailable = isNotFound || isBanned;
-          const isAvailable = !isUnavailable;
-          return (showAvailable && isAvailable) || (showB && isUnavailable);
-        });
+          if (anyAvailability) {
+            list = list.filter(s => {
+              const isNotFound = (s.not_found === true);
+              const isBanned = (s.is_banned === true);
+              const isUnavailable = isNotFound || isBanned;
+              const isAvailable = !isUnavailable;
+              return (showAvailable && isAvailable) || (showB && isUnavailable);
+            });
+          }
 
         // Now handle NSFW: unavailable/banned items bypass NSFW checks so
         // "Show unavailable" works regardless of NSFW toggles. Available
@@ -570,7 +578,13 @@
         tr.appendChild(descTd);
         tbody.appendChild(tr);
       }
-      document.getElementById('count').textContent = `Showing ${filteredCount} out of ${dbTotal} in database`;
+      try{
+        if(Array.isArray(list) && list.length === 0){
+          document.getElementById('count').textContent = `Showing 0 out of ${dbTotal} in database`;
+        } else {
+          document.getElementById('count').textContent = `Showing ${filteredCount} out of ${dbTotal} in database`;
+        }
+      }catch(e){/* ignore DOM errors */}
       // update header count as well (show overall DB total)
       const hc = document.getElementById('headerSubCount');
       if(hc) hc.textContent = `${dbTotal} subreddits found`;
@@ -587,8 +601,10 @@
             // when filters are empty and list is empty, disable pagination
             paginationDisabled = true;
           } else if(!anyNSFW){
-            hintEl.textContent = 'No NSFW option selected — enable "Show NSFW" or "Show Non-NSFW" (or enable "Show unavailable") to see items.';
+            hintEl.textContent = 'No filter option selected —set the filters (or reset all filters) to see items in the list.';
             paginationDisabled = true;
+            // when NSFW filters hide all results, show explicit zero count
+            try{ document.getElementById('count').textContent = `Showing 0 out of ${dbTotal} in database`; }catch(e){}
           } else {
             hintEl.textContent = 'No results — try widening your filters (search, mentions, subscribers, availability, NSFW).';
             paginationDisabled = false;
@@ -611,8 +627,15 @@
         if(newDbTotal !== dbTotal){
           dbTotal = newDbTotal;
         }
-        // update displayed counts
-        document.getElementById('count').textContent = `Showing ${filteredCount} out of ${dbTotal} in database`;
+        // update displayed counts; if paginationDisabled (client-side filters hide everything)
+        // show explicit zero count instead of using server-side `filteredCount` which may be non-zero.
+        try{
+          if(paginationDisabled){
+            document.getElementById('count').textContent = `Showing 0 out of ${dbTotal} in database`;
+          } else {
+            document.getElementById('count').textContent = `Showing ${filteredCount} out of ${dbTotal} in database`;
+          }
+        }catch(e){/* ignore DOM errors */}
         const hc = document.getElementById('headerSubCount');
         if(hc) hc.textContent = `${dbTotal} subreddits found`;
       }catch(e){ /* ignore errors */ }
@@ -780,9 +803,20 @@
       const showNonNSFWEl = document.getElementById('showNonNSFW');
       function updateContentFilterControls(){
         try{
-          const disabled = !!(showBannedEl && showBannedEl.checked);
-          if(showNSFWEl) showNSFWEl.disabled = disabled;
-          if(showNonNSFWEl) showNonNSFWEl.disabled = disabled;
+          const sB = !!(showBannedEl && showBannedEl.checked);
+          const sA = !!(showAvailableEl && showAvailableEl.checked);
+          // If only "Show unavailable" is selected (available is off), enable both content checkboxes
+          const onlyUnavailable = sB && !sA;
+          // When both availability options are selected (or available-only), disable content toggles
+          const disableContent = sB && sA;
+          if(showNSFWEl){
+            showNSFWEl.disabled = disableContent;
+            if(onlyUnavailable){ showNSFWEl.checked = true; showNSFWEl.disabled = true; }
+          }
+          if(showNonNSFWEl){
+            showNonNSFWEl.disabled = disableContent;
+            if(onlyUnavailable){ showNonNSFWEl.checked = true; showNonNSFWEl.disabled = true; }
+          }
         }catch(e){/* ignore */}
       }
       const showAllBtn = document.getElementById('showAll');
@@ -956,10 +990,52 @@
       content.textContent = htmlText || '';
     }
 
-    // initial load: restore preferences, then fetch the saved page and render
+    // initial load: restore preferences, then show age confirmation (if needed) and fetch the saved page
     loadPrefs();
     updateSortedHeader();
-    loadPage(currentPage);
+    // Age-gate: require user confirmation once per browser (saved via cookie)
+    function showAgeGateThenLoad(){
+      try{
+        const confirmed = getCookie('pineapple_age_confirmed');
+        if(confirmed === '1'){
+          loadPage(currentPage);
+          return;
+        }
+      }catch(e){ /* ignore and show gate */ }
+
+      // build modal
+      const overlay = document.createElement('div');
+      overlay.className = 'age-modal-overlay';
+      const box = document.createElement('div');
+      box.className = 'age-modal-box';
+      const h = document.createElement('h2'); h.textContent = 'Age confirmation';
+      const p = document.createElement('p'); p.textContent = 'This page may contain explicit (18+) content. Please confirm that you are of the required age to visit this website.';
+      const actions = document.createElement('div'); actions.className = 'age-modal-actions';
+      const confirmBtn = document.createElement('button'); confirmBtn.className = 'btn'; confirmBtn.textContent = 'I am 18+';
+      const leaveBtn = document.createElement('button'); leaveBtn.className = 'btn btn-ghost'; leaveBtn.textContent = 'Leave';
+      actions.appendChild(leaveBtn); actions.appendChild(confirmBtn);
+      box.appendChild(h); box.appendChild(p); box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      // prevent background scroll
+      document.body.style.overflow = 'hidden';
+
+      confirmBtn.addEventListener('click', ()=>{
+        try{ setCookie('pineapple_age_confirmed','1',365); }catch(e){}
+        overlay.remove();
+        document.body.style.overflow = '';
+        loadPage(currentPage);
+      });
+      leaveBtn.addEventListener('click', ()=>{
+        try{ overlay.remove(); }catch(e){}
+        // redirect to a safe place
+        window.location.href = 'about:blank';
+      });
+      // focus confirm for keyboard users
+      confirmBtn.focus();
+    }
+
+    showAgeGateThenLoad();
   </script>
 </body>
 </html>
