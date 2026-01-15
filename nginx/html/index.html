@@ -28,6 +28,8 @@
     th,td{padding:10px;border-bottom:1px solid #f1f5f9;text-align:left}
     th{font-weight:600;color:#0f172a;white-space:nowrap}
     tr:hover{background:#f8fafc}
+    /* Zebra striping: light background for every 2nd row */
+    tbody tr:nth-child(even){background:#ececec}
     .muted{color:var(--muted);font-size:0.9em}
     .badge{background:#eef2ff;color:var(--accent);padding:4px 8px;border-radius:999px;font-size:0.85em}
     .row-actions{display:flex;gap:8px;align-items:center}
@@ -352,6 +354,10 @@
         ctr.style.gap = '8px';
         ctr.style.alignItems = 'center';
 
+        const first = document.createElement('button'); first.className = 'btn btn-ghost'; first.textContent = 'First';
+        first.disabled = currentPage <= 1;
+        first.addEventListener('click', ()=>{ if(currentPage>1) { loadPage(1); try{ savePrefs(); }catch(e){} } });
+
         const prev = document.createElement('button'); prev.className = 'btn btn-ghost'; prev.textContent = '◀ Prev';
         prev.disabled = currentPage <= 1;
         prev.addEventListener('click', ()=>{ if(currentPage>1) { loadPage(currentPage-1); try{ savePrefs(); }catch(e){} } });
@@ -370,10 +376,16 @@
         next.disabled = currentPage >= totalPages;
         next.addEventListener('click', ()=>{ if(currentPage<totalPages) { loadPage(currentPage+1); try{ savePrefs(); }catch(e){} } });
 
+        const last = document.createElement('button'); last.className = 'btn btn-ghost'; last.textContent = 'Last';
+        last.disabled = currentPage >= totalPages;
+        last.addEventListener('click', ()=>{ if(currentPage<totalPages) { loadPage(totalPages); try{ savePrefs(); }catch(e){} } });
+
+        ctr.appendChild(first);
         ctr.appendChild(prev);
         ctr.appendChild(pageInput);
         ctr.appendChild(pageTotal);
         ctr.appendChild(next);
+        ctr.appendChild(last);
         return ctr;
       }
 
