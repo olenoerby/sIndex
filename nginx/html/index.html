@@ -126,6 +126,16 @@
                       <option value="name">Name</option>
                     </select></td>
                   </tr>
+                  <tr>
+                    <td style="width:50%;padding:6px 4px;vertical-align:middle">Per page:</td>
+                    <td style="width:50%;padding:6px 4px">
+                      <select id="perPageSelect" style="width:100%">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                      </select>
+                    </td>
+                  </tr>
                 </table>
               </div>
             </div>
@@ -336,25 +346,24 @@
         prev.disabled = currentPage <= 1;
         prev.addEventListener('click', ()=>{ if(currentPage>1) { loadPage(currentPage-1); try{ savePrefs(); }catch(e){} } });
 
-        const pageInfo = document.createElement('div'); pageInfo.className = 'muted'; pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
+        const pageInput = document.createElement('input');
+        pageInput.type = 'number';
+        pageInput.min = 1;
+        pageInput.max = totalPages;
+        pageInput.style.width = '80px';
+        pageInput.className = 'muted';
+        pageInput.value = String(currentPage);
+        pageInput.addEventListener('change', ()=>{ const v = Number(pageInput.value||0); if(v>=1 && v<=totalPages){ loadPage(v); try{ savePrefs(); }catch(e){} } else { pageInput.value = String(currentPage); } });
+        const pageTotal = document.createElement('span'); pageTotal.className = 'muted'; pageTotal.style.marginLeft = '6px'; pageTotal.textContent = '/ ' + String(totalPages);
 
         const next = document.createElement('button'); next.className = 'btn btn-ghost'; next.textContent = 'Next ▶';
         next.disabled = currentPage >= totalPages;
         next.addEventListener('click', ()=>{ if(currentPage<totalPages) { loadPage(currentPage+1); try{ savePrefs(); }catch(e){} } });
 
-        const perSel = document.createElement('select'); perSel.style.marginLeft = '8px'; perSel.innerHTML = '<option value="25">25</option><option value="50">50</option><option value="100">100</option>';
-        perSel.value = String(perPage);
-        perSel.addEventListener('change', ()=>{ perPage = Number(perSel.value); try{ savePrefs(); }catch(e){} loadPage(1); });
-
-        const goto = document.createElement('input'); goto.type='number'; goto.min=1; goto.style.width='110px'; goto.placeholder='Go to page';
-        goto.addEventListener('change', ()=>{ const v = Number(goto.value||0); if(v>=1 && v<=totalPages) { loadPage(v); try{ savePrefs(); }catch(e){} } });
-
         ctr.appendChild(prev);
-        ctr.appendChild(pageInfo);
+        ctr.appendChild(pageInput);
+        ctr.appendChild(pageTotal);
         ctr.appendChild(next);
-        ctr.appendChild(document.createTextNode(' per page:'));
-        ctr.appendChild(perSel);
-        ctr.appendChild(goto);
         return ctr;
       }
 
@@ -969,6 +978,17 @@
         currentSort = sortSel.value || 'mentions';
         updateSortedHeader();
         savePrefs();
+        loadPage(1);
+      });
+    }
+
+    // wire per-page select in Options popout (moved from pagination controls)
+    const perPageSelect = document.getElementById('perPageSelect');
+    if(perPageSelect){
+      perPageSelect.value = String(perPage);
+      perPageSelect.addEventListener('change', ()=>{
+        perPage = Number(perPageSelect.value);
+        try{ savePrefs(); }catch(e){}
         loadPage(1);
       });
     }
