@@ -154,6 +154,7 @@
   </table>
   </div>
     </div>
+    <div id="paginationControlsBottom" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"></div>
     
 
   <script>
@@ -304,44 +305,61 @@
     // Disable/enable interactive controls while a server request is in progress
     function setControlsDisabled(disabled){
       try{
-        document.querySelectorAll('#paginationControls button, #paginationControls select, #paginationControls input').forEach(el => el.disabled = disabled);
+        document.querySelectorAll('#paginationControls button, #paginationControls select, #paginationControls input, #paginationControlsBottom button, #paginationControlsBottom select, #paginationControlsBottom input').forEach(el => el.disabled = disabled);
         const maybe = ['reload','filterBtn','sortDir','resetFilters','listing','sortSelect'];
         maybe.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = disabled; });
       }catch(e){/* ignore */}
     }
 
     function renderPaginationControls(){
-      const ctr = document.getElementById('paginationControls');
-      if(!ctr) return;
+      const top = document.getElementById('paginationControls');
+      const bottom = document.getElementById('paginationControlsBottom');
+      if(!top && !bottom) return;
       if(paginationDisabled){
-        ctr.style.display = 'none';
+        if(top) top.style.display = 'none';
+        if(bottom) bottom.style.display = 'none';
         return;
       } else {
-        ctr.style.display = 'flex';
+        if(top) top.style.display = 'flex';
+        if(bottom) bottom.style.display = 'flex';
       }
-      ctr.innerHTML = '';
+
       const totalPages = Math.max(1, Math.ceil((filteredCount || 0) / perPage));
-      const prev = document.createElement('button'); prev.className = 'btn btn-ghost'; prev.textContent = '◀ Prev';
-      prev.disabled = currentPage <= 1;
-      prev.addEventListener('click', ()=>{ if(currentPage>1) loadPage(currentPage-1); });
-      const next = document.createElement('button'); next.className = 'btn btn-ghost'; next.textContent = 'Next ▶';
-      next.disabled = currentPage >= totalPages;
-      next.addEventListener('click', ()=>{ if(currentPage<totalPages) loadPage(currentPage+1); });
-      const pageInfo = document.createElement('div'); pageInfo.className = 'muted'; pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
-      const perSel = document.createElement('select'); perSel.style.marginLeft = '8px'; perSel.innerHTML = '<option value="25">25</option><option value="50">50</option><option value="100">100</option>';
-      perSel.value = String(perPage);
-      perSel.addEventListener('change', ()=>{ perPage = Number(perSel.value); try{ savePrefs(); }catch(e){} loadPage(1); });
-      const goto = document.createElement('input'); goto.type='number'; goto.min=1; goto.style.width='72px'; goto.placeholder='Go to page'; goto.addEventListener('change', ()=>{ const v = Number(goto.value||0); if(v>=1 && v<=totalPages) loadPage(v); });
-      ctr.appendChild(prev);
-      ctr.appendChild(pageInfo);
-      ctr.appendChild(next);
-      ctr.appendChild(document.createTextNode(' per page:'));
-      ctr.appendChild(perSel);
-      ctr.appendChild(goto);
-      // ensure navigation updates are persisted
-      prev.addEventListener('click', ()=>{ try{ savePrefs(); }catch(e){} });
-      next.addEventListener('click', ()=>{ try{ savePrefs(); }catch(e){} });
-      goto.addEventListener('change', ()=>{ try{ savePrefs(); }catch(e){} });
+
+      function makeControls(){
+        const ctr = document.createElement('div');
+        ctr.style.display = 'flex';
+        ctr.style.gap = '8px';
+        ctr.style.alignItems = 'center';
+
+        const prev = document.createElement('button'); prev.className = 'btn btn-ghost'; prev.textContent = '◀ Prev';
+        prev.disabled = currentPage <= 1;
+        prev.addEventListener('click', ()=>{ if(currentPage>1) { loadPage(currentPage-1); try{ savePrefs(); }catch(e){} } });
+
+        const pageInfo = document.createElement('div'); pageInfo.className = 'muted'; pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
+
+        const next = document.createElement('button'); next.className = 'btn btn-ghost'; next.textContent = 'Next ▶';
+        next.disabled = currentPage >= totalPages;
+        next.addEventListener('click', ()=>{ if(currentPage<totalPages) { loadPage(currentPage+1); try{ savePrefs(); }catch(e){} } });
+
+        const perSel = document.createElement('select'); perSel.style.marginLeft = '8px'; perSel.innerHTML = '<option value="25">25</option><option value="50">50</option><option value="100">100</option>';
+        perSel.value = String(perPage);
+        perSel.addEventListener('change', ()=>{ perPage = Number(perSel.value); try{ savePrefs(); }catch(e){} loadPage(1); });
+
+        const goto = document.createElement('input'); goto.type='number'; goto.min=1; goto.style.width='110px'; goto.placeholder='Go to page';
+        goto.addEventListener('change', ()=>{ const v = Number(goto.value||0); if(v>=1 && v<=totalPages) { loadPage(v); try{ savePrefs(); }catch(e){} } });
+
+        ctr.appendChild(prev);
+        ctr.appendChild(pageInfo);
+        ctr.appendChild(next);
+        ctr.appendChild(document.createTextNode(' per page:'));
+        ctr.appendChild(perSel);
+        ctr.appendChild(goto);
+        return ctr;
+      }
+
+      if(top){ top.innerHTML = ''; top.appendChild(makeControls()); }
+      if(bottom){ bottom.innerHTML = ''; bottom.appendChild(makeControls()); }
     }
 
     function updateSortedHeader(){
