@@ -278,18 +278,27 @@ def list_subreddits(
             subq = subq.filter(models.Subreddit.over18 == False)
 
         # Availability filters
-        # Show available: include rows where not_found is not True (i.e. False or NULL)
-        # Show unavailable: include rows where not_found == True OR is_banned == True
+        # By default exclude subreddits that are 'not_found' (they don't resolve on Reddit)
+        try:
+            subq = subq.filter(models.Subreddit.not_found != True)
+        except Exception:
+            # Fallback: keep existing behavior if unary comparison unsupported
+            pass
+
+        # Show available: explicitly include rows where not_found is False or NULL
         if (show_available is True) and (show_banned is not True):
             try:
                 subq = subq.filter((models.Subreddit.not_found == False) | (models.Subreddit.not_found == None))
             except Exception:
                 subq = subq.filter(models.Subreddit.not_found != True)
+
+        # Show banned: when requested, include only rows explicitly marked as banned
+        # (do not include not_found rows here — those are non-resolving and should remain hidden)
         if (show_banned is True) and (show_available is not True):
             try:
-                subq = subq.filter((models.Subreddit.not_found == True) | (models.Subreddit.is_banned == True))
+                subq = subq.filter(models.Subreddit.is_banned == True)
             except Exception:
-                subq = subq.filter((models.Subreddit.not_found == True) | (models.Subreddit.is_banned == True))
+                subq = subq.filter(models.Subreddit.is_banned == True)
         # Apply mentions filters via HAVING (since mentions is an aggregate)
         if min_mentions is not None:
             subq = subq.having(func.count(models.Mention.id) >= int(min_mentions))
