@@ -34,6 +34,13 @@ API_RATE_DELAY = float(os.getenv('API_RATE_DELAY', '6.5'))
 # Number of days to consider subreddit metadata fresh before re-fetching from Reddit.
 # Can be set via `SUBREDDIT_META_CACHE_DAYS`; falls back to legacy `META_CACHE_DAYS` if present.
 SUBREDDIT_META_CACHE_DAYS = int(os.getenv('SUBREDDIT_META_CACHE_DAYS') or os.getenv('META_CACHE_DAYS') or '7')
+# Max retries for subreddit about fetches and per-request HTTP timeout (seconds)
+SUBABOUT_MAX_RETRIES = int(os.getenv('SUBABOUT_MAX_RETRIES', '3'))
+HTTP_REQUEST_TIMEOUT = float(os.getenv('HTTP_REQUEST_TIMEOUT', '15'))
+# When idle (no more user posts), scan for subreddits missing metadata and update up to this many
+MISSING_META_BATCH = int(os.getenv('MISSING_META_BATCH', '2000'))
+# Seconds to sleep between batches when doing idle sweeping of outdated metadata
+IDLE_BATCH_SLEEP_SECONDS = float(os.getenv('IDLE_BATCH_SLEEP_SECONDS', '5'))
 # Optional testing controls:
 # If set, scanner will only process up to this many Friday posts and then exit.
 TEST_POST_LIMIT = int(os.getenv('TEST_POST_LIMIT')) if os.getenv('TEST_POST_LIMIT') else None
@@ -227,9 +234,52 @@ def fetch_post_comments(post_id: str, max_retries: int = 5):
 def fetch_sub_about(name: str):
     url = f"https://www.reddit.com/r/{name}/about.json"
     headers = {"User-Agent": "PineappleIndexBot/0.1 (by /u/yourbot)"}
-    r = httpx.get(url, headers=headers)
-    time.sleep(API_RATE_DELAY)
-    return r
+    max_retries = SUBABOUT_MAX_RETRIES
+    timeout = HTTP_REQUEST_TIMEOUT
+    attempt = 0
+    base_sleep = 2
+    while True:
+        attempt += 1
+        try:
+            r = httpx.get(url, headers=headers, timeout=timeout)
+        except httpx.ReadTimeout as e:
+            if attempt <= max_retries:
+                sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
+                logger.warning(f"Read timeout fetching /r/{name} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
+                time.sleep(sleep_for)
+                continue
+            # re-raise so caller can log/handle
+            raise
+        except httpx.RequestError as e:
+            # network-level errors
+            if attempt <= max_retries:
+                sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
+                logger.warning(f"Network error fetching /r/{name} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
+                time.sleep(sleep_for)
+                continue
+            raise
+
+        # small pause to respect API rate limiting
+        try:
+            time.sleep(API_RATE_DELAY)
+        except Exception:
+            pass
+
+        # Handle 429 Too Many Requests specially
+        if r.status_code == 429:
+            ra = _parse_retry_after(r.headers.get('Retry-After'))
+            if ra is None:
+                sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
+            else:
+                sleep_for = max(1, ra)
+            logger.warning(f"Received 429 for /r/{name}; retry {attempt}/{max_retries} after {sleep_for}s")
+            if attempt <= max_retries:
+                time.sleep(sleep_for)
+                continue
+            # exhausted retries; raise to let caller handle
+            r.raise_for_status()
+
+        return r
 
 
 def walk_comments(data, found):
@@ -594,7 +644,29 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
     # meaningful metadata, proceed to fetch regardless of a recent last_checked.
     now = datetime.utcnow()
     if sub.last_checked and (now - sub.last_checked) < timedelta(days=SUBREDDIT_META_CACHE_DAYS):
-        if sub.display_name or sub.display_name_prefixed or sub.title or sub.public_description_html or sub.subscribers:
+        # Only skip fetching if all key metadata fields are present. The
+        # previous logic skipped when ANY field existed, which caused cases
+        # where a subreddit missing `title` or `subscribers` would be incorrectly
+        # treated as up-to-date. Ensure we refresh if any important field is
+        # still missing.
+        try:
+            has_display = sub.display_name is not None and str(sub.display_name).strip() != ''
+        except Exception:
+            has_display = False
+        try:
+            has_title = sub.title is not None and str(sub.title).strip() != ''
+        except Exception:
+            has_title = False
+        try:
+            has_desc = sub.public_description_html is not None and str(sub.public_description_html).strip() != ''
+        except Exception:
+            has_desc = False
+        try:
+            has_subs = sub.subscribers is not None
+        except Exception:
+            has_subs = False
+
+        if has_display and has_title and has_desc and has_subs:
             return
     try:
         r = fetch_sub_about(sub.name)
@@ -690,6 +762,12 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
     except Exception as e:
         logger.exception(f"Error fetching about for /r/{sub.name}: {e}")
     finally:
+        try:
+            # Record when we last attempted to check this subreddit so idle
+            # sweeps will not repeatedly try the same rows immediately.
+            sub.last_checked = datetime.utcnow()
+        except Exception:
+            pass
         session.add(sub)
         session.commit()
 
@@ -745,6 +823,44 @@ def main_loop():
             # pagination
             after = data.get('data', {}).get('after')
             if not after:
+                # No more pages of user posts. Before sleeping, attempt to
+                # refresh metadata for subreddits that are missing key fields
+                # (display name, title, description or subscriber count). This
+                # helps populate the UI without waiting for the next scanner
+                # run.
+                try:
+                    with Session(engine) as sess2:
+                        api_logger = logger
+                        api_logger.info(f"No more user posts; sweeping outdated metadata in batches of {MISSING_META_BATCH}")
+                        # Continually process batches of outdated or never-checked subreddits
+                        # until none remain (Option B): select rows where last_checked
+                        # is NULL or older than the configured cache window.
+                        cutoff = datetime.utcnow() - timedelta(days=SUBREDDIT_META_CACHE_DAYS)
+                        while True:
+                            rows = sess2.query(models.Subreddit).filter(
+                                (models.Subreddit.last_checked == None) |
+                                (models.Subreddit.last_checked <= cutoff)
+                            ).order_by(models.Subreddit.last_checked.asc().nullsfirst()).limit(MISSING_META_BATCH).all()
+                            if not rows:
+                                api_logger.info('No outdated subreddits found; idle sweep complete')
+                                break
+                            api_logger.info(f"Refreshing metadata for {len(rows)} outdated subreddits (batch)")
+                            for s in rows:
+                                try:
+                                    update_subreddit_metadata(sess2, s)
+                                except Exception:
+                                    sess2.rollback()
+                                    api_logger.exception(f"Failed to refresh metadata for /r/{s.name}")
+                            # pause between batches to avoid hammering Reddit and DB
+                            try:
+                                if IDLE_BATCH_SLEEP_SECONDS and IDLE_BATCH_SLEEP_SECONDS > 0:
+                                    api_logger.info(f"Sleeping {IDLE_BATCH_SLEEP_SECONDS}s between idle batches")
+                                    time.sleep(IDLE_BATCH_SLEEP_SECONDS)
+                            except Exception:
+                                pass
+                except Exception:
+                    logger.exception('Idle metadata refresh failed')
+                # Finally, sleep for the configured idle period
                 logger.info('Reached end of user posts. Sleeping for 6 hours.')
                 time.sleep(6 * 3600)
         except Exception as e:
