@@ -150,13 +150,78 @@ def fetch_user_posts(after: str = None):
     return r.json()
 
 
-def fetch_post_comments(post_id: str):
+def _parse_retry_after(header_value: str):
+    """Parse a Retry-After header value. Returns seconds (int) or None."""
+    if not header_value:
+        return None
+    header_value = header_value.strip()
+    # If it's an integer, return as seconds
+    try:
+        return int(header_value)
+    except Exception:
+        pass
+    # Otherwise, try to parse HTTP date
+    try:
+        # Example: Wed, 21 Oct 2015 07:28:00 GMT
+        dt = datetime.strptime(header_value, '%a, %d %b %Y %H:%M:%S %Z')
+        # Compute seconds until that time
+        delta = (dt - datetime.utcnow()).total_seconds()
+        return int(delta) if delta > 0 else 0
+    except Exception:
+        return None
+
+
+def fetch_post_comments(post_id: str, max_retries: int = 5):
+    """Fetch comments JSON for a post, with retry/backoff on 429 responses.
+
+    Honors `Retry-After` header when present. Returns parsed JSON on success
+    or raises the last encountered exception after retries are exhausted.
+    """
     url = f"https://www.reddit.com/comments/{post_id}.json?limit=500"
     headers = {"User-Agent": "PineappleIndexBot/0.1 (by /u/yourbot)"}
-    r = httpx.get(url, headers=headers)
-    time.sleep(API_RATE_DELAY)
-    r.raise_for_status()
-    return r.json()
+    attempt = 0
+    base_sleep = 5
+    while True:
+        attempt += 1
+        try:
+            r = httpx.get(url, headers=headers)
+        except Exception as e:
+            # Network-level errors: if we have retries left, back off and retry
+            if attempt <= max_retries:
+                sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
+                logger.warning(f"Network error fetching comments for {post_id}, retrying in {sleep_for}s: {e}")
+                time.sleep(sleep_for)
+                continue
+            raise
+
+        # Always sleep a bit to respect general API rate limiting
+        try:
+            time.sleep(API_RATE_DELAY)
+        except Exception:
+            pass
+
+        # Handle 429 Too Many Requests specially
+        if r.status_code == 429:
+            # Check Retry-After header
+            ra = _parse_retry_after(r.headers.get('Retry-After'))
+            if ra is None:
+                # exponential backoff if header absent
+                sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
+            else:
+                sleep_for = max(1, ra)
+            logger.warning(f"Received 429 for post {post_id}; retry {attempt}/{max_retries} after {sleep_for}s")
+            if attempt <= max_retries:
+                time.sleep(sleep_for)
+                continue
+            # exhausted retries
+            r.raise_for_status()
+
+        try:
+            r.raise_for_status()
+            return r.json()
+        except httpx.HTTPStatusError:
+            # For other HTTP errors, don't retry here; propagate
+            raise
 
 
 def fetch_sub_about(name: str):
