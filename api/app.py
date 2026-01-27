@@ -378,13 +378,36 @@ def health():
 
 
 @app.get("/stats")
-def stats():
+def stats(days: int = None):
     """Aggregate statistics about the dataset.
 
-    Returns analytics row if present, otherwise computes counts.
+    If days is provided, returns counts for that date range.
+    Otherwise returns analytics row if present, or all-time counts.
     """
     with Session(engine) as session:
         out = {}
+        
+        # If days specified, compute counts for that window only
+        if days is not None:
+            days = max(1, min(3650, int(days)))
+            start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+            try:
+                out['total_mentions'] = int(session.query(func.count(models.Mention.id)).filter(models.Mention.timestamp >= start_ts).scalar() or 0)
+                out['total_posts'] = int(session.query(func.count(models.Post.id)).filter(models.Post.created_utc >= start_ts).scalar() or 0)
+                out['total_comments'] = int(session.query(func.count(models.Comment.id)).filter(models.Comment.created_utc >= start_ts).scalar() or 0)
+                # For subreddits, count those first mentioned in the window
+                out['total_subreddits'] = int(session.query(func.count(models.Subreddit.id)).filter(models.Subreddit.first_mentioned >= start_ts).scalar() or 0)
+            except Exception:
+                api_logger.exception("Failed to compute window stats")
+            # ensure we always include current last_scanned
+            try:
+                last_scanned = session.query(func.max(models.Subreddit.last_checked)).scalar()
+                out["last_scanned"] = last_scanned
+            except Exception:
+                pass
+            return out
+        
+        # Otherwise, return all-time stats from analytics or counts
         try:
             analytics = session.query(models.Analytics).first()
             if analytics:
@@ -582,10 +605,14 @@ def list_mentions(page: int = 1, per_page: int = 50, subreddit: Optional[str] = 
 
 
 @app.get("/stats/top")
-def stats_top(limit: int = 20):
+def stats_top(limit: int = 20, days: int = 90):
+    limit = max(1, min(500, int(limit)))
+    days = max(1, min(3650, int(days)))
+    start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
     with Session(engine) as session:
         rows = session.query(models.Subreddit.name, func.count(models.Mention.id).label('mentions'))\
             .join(models.Mention, models.Mention.subreddit_id == models.Subreddit.id)\
+            .filter(models.Mention.timestamp >= start_ts)\
             .group_by(models.Subreddit.name)\
             .order_by(desc('mentions'))\
             .limit(limit).all()
@@ -593,15 +620,18 @@ def stats_top(limit: int = 20):
 
 
 @app.get("/stats/top_posts")
-def stats_top_posts(limit: int = 20):
+def stats_top_posts(limit: int = 20, days: int = 90):
     """Top posts ordered by total mention count."""
     limit = max(1, min(500, int(limit)))
+    days = max(1, min(3650, int(days)))
+    start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
     with Session(engine) as session:
         rows = session.query(
             models.Post.reddit_post_id,
             models.Post.title,
             func.count(models.Mention.id).label('mentions')
-        ).join(models.Mention, models.Mention.post_id == models.Post.id, isouter=True)
+        ).join(models.Mention, models.Mention.post_id == models.Post.id, isouter=True)\
+        .filter(models.Mention.timestamp >= start_ts)
         rows = rows.group_by(models.Post.id).order_by(desc('mentions')).limit(limit).all()
         out = []
         for r in rows:
@@ -614,9 +644,11 @@ def stats_top_posts(limit: int = 20):
 
 
 @app.get("/stats/top_unique_posts")
-def stats_top_unique_posts(limit: int = 20):
+def stats_top_unique_posts(limit: int = 20, days: int = 90):
     """Posts ordered by number of distinct subreddits mentioned in the post's comments."""
     limit = max(1, min(500, int(limit)))
+    days = max(1, min(3650, int(days)))
+    start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
     with Session(engine) as session:
         # Count distinct subreddit_id per post via mentions
         rows = session.query(
@@ -624,7 +656,8 @@ def stats_top_unique_posts(limit: int = 20):
             models.Post.title,
             func.count(func.distinct(models.Mention.subreddit_id)).label('unique_subreddits'),
             models.Post.url,
-        ).join(models.Mention, models.Mention.post_id == models.Post.id, isouter=True)
+        ).join(models.Mention, models.Mention.post_id == models.Post.id, isouter=True)\
+        .filter(models.Mention.timestamp >= start_ts)
         rows = rows.group_by(models.Post.id).order_by(desc('unique_subreddits')).limit(limit).all()
         out = []
         for r in rows:
@@ -638,9 +671,11 @@ def stats_top_unique_posts(limit: int = 20):
 
 
 @app.get("/stats/top_commenters")
-def stats_top_commenters(limit: int = 20):
+def stats_top_commenters(limit: int = 20, days: int = 90):
     """Top users by number of comments (user_id)."""
     limit = max(1, min(500, int(limit)))
+    days = max(1, min(3650, int(days)))
+    start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
     with Session(engine) as session:
         # Prefer counting users from the `mentions` table since the scanner
         # records the author/id there when a subreddit is mentioned. Fall
@@ -650,7 +685,7 @@ def stats_top_commenters(limit: int = 20):
             mrows = session.query(
                 models.Mention.user_id,
                 func.count(models.Mention.id).label('mentions')
-            ).filter(models.Mention.user_id != None)
+            ).filter(models.Mention.user_id != None).filter(models.Mention.timestamp >= start_ts)
             mrows = mrows.group_by(models.Mention.user_id).order_by(desc('mentions')).limit(limit).all()
             if mrows:
                 for r in mrows:
@@ -676,78 +711,178 @@ def stats_top_commenters(limit: int = 20):
 
 @app.get("/stats/daily")
 def stats_daily(days: int = 90):
-    """Return daily aggregated counts for posts, comments, mentions and new subreddits.
+    """Return aggregated counts for posts, comments, mentions and new subreddits.
 
-    The response is a list of {date: 'YYYY-MM-DD', posts: n, comments: n, mentions: n, new_subreddits: n}
+    For days <= 90: returns daily data {date: 'YYYY-MM-DD', ...}
+    For days > 90: returns monthly data {date: 'YYYY-MM', ...}
     ordered from oldest to newest for the requested `days` window.
     """
     days = max(1, min(3650, int(days)))
     start_ts = int((datetime.utcnow() - timedelta(days=days)).timestamp())
+    use_monthly = days > 90
     with Session(engine) as session:
         out_map = {}
-        # posts by day
-        try:
-            rows = session.query(
-                func.to_char(func.to_timestamp(models.Post.created_utc), 'YYYY-MM-DD').label('day'),
-                func.count(models.Post.id)
-            ).filter(models.Post.created_utc >= start_ts).group_by('day').order_by('day').all()
-            for day, cnt in rows:
-                out_map.setdefault(day, {})['posts'] = int(cnt or 0)
-        except Exception:
-            api_logger.exception('Failed to compute daily posts')
+        if use_monthly:
+            # Monthly aggregation
+            # posts by month
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Post.created_utc), 'YYYY-MM').label('month'),
+                    func.count(models.Post.id)
+                ).filter(models.Post.created_utc >= start_ts).group_by('month').order_by('month').all()
+                for month, cnt in rows:
+                    out_map.setdefault(month, {})['posts'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute monthly posts')
 
-        # comments by day
-        try:
-            rows = session.query(
-                func.to_char(func.to_timestamp(models.Comment.created_utc), 'YYYY-MM-DD').label('day'),
-                func.count(models.Comment.id)
-            ).filter(models.Comment.created_utc >= start_ts).group_by('day').order_by('day').all()
-            for day, cnt in rows:
-                out_map.setdefault(day, {})['comments'] = int(cnt or 0)
-        except Exception:
-            api_logger.exception('Failed to compute daily comments')
+            # comments by month
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Comment.created_utc), 'YYYY-MM').label('month'),
+                    func.count(models.Comment.id)
+                ).filter(models.Comment.created_utc >= start_ts).group_by('month').order_by('month').all()
+                for month, cnt in rows:
+                    out_map.setdefault(month, {})['comments'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute monthly comments')
 
-        # mentions by day (use Mention.timestamp)
-        try:
-            rows = session.query(
-                func.to_char(func.to_timestamp(models.Mention.timestamp), 'YYYY-MM-DD').label('day'),
-                func.count(models.Mention.id)
-            ).filter(models.Mention.timestamp >= start_ts).group_by('day').order_by('day').all()
-            for day, cnt in rows:
-                out_map.setdefault(day, {})['mentions'] = int(cnt or 0)
-        except Exception:
-            api_logger.exception('Failed to compute daily mentions')
+            # mentions by month
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Mention.timestamp), 'YYYY-MM').label('month'),
+                    func.count(models.Mention.id)
+                ).filter(models.Mention.timestamp >= start_ts).group_by('month').order_by('month').all()
+                for month, cnt in rows:
+                    out_map.setdefault(month, {})['mentions'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute monthly mentions')
 
-        # new subreddits first_mentioned by day
-        try:
-            rows = session.query(
-                func.to_char(func.to_timestamp(models.Subreddit.first_mentioned), 'YYYY-MM-DD').label('day'),
-                func.count(models.Subreddit.id)
-            ).filter(models.Subreddit.first_mentioned != None).filter(models.Subreddit.first_mentioned >= start_ts).group_by('day').order_by('day').all()
-            for day, cnt in rows:
-                out_map.setdefault(day, {})['new_subreddits'] = int(cnt or 0)
-        except Exception:
-            api_logger.exception('Failed to compute daily new subreddits')
+            # new subreddits by month
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Subreddit.first_mentioned), 'YYYY-MM').label('month'),
+                    func.count(models.Subreddit.id)
+                ).filter(models.Subreddit.first_mentioned != None).filter(models.Subreddit.first_mentioned >= start_ts).group_by('month').order_by('month').all()
+                for month, cnt in rows:
+                    out_map.setdefault(month, {})['new_subreddits'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute monthly new subreddits')
 
-        # produce a sorted list of dates between start and today where we have data (or zeroes)
-        try:
-            # build continuous date list from start to now
-            start_date = (datetime.utcnow() - timedelta(days=days)).date()
-            dates = [(start_date + timedelta(days=i)) for i in range(days+1)]
-            items = []
-            for d in dates:
-                key = d.strftime('%Y-%m-%d')
-                v = out_map.get(key, {})
-                items.append({
-                    'date': key,
-                    'posts': v.get('posts', 0),
-                    'comments': v.get('comments', 0),
-                    'mentions': v.get('mentions', 0),
-                    'new_subreddits': v.get('new_subreddits', 0)
-                })
-        except Exception:
-            api_logger.exception('Failed to assemble daily timeline')
-            items = []
+            # build continuous month list from start to now
+            # Skip leading empty periods for cleaner display
+            try:
+                all_items = []
+                start_date = (datetime.utcnow() - timedelta(days=days)).date()
+                current = start_date.replace(day=1)
+                found_data = False
+                while current <= datetime.utcnow().date():
+                    key = current.strftime('%Y-%m')
+                    v = out_map.get(key, {})
+                    posts = v.get('posts', 0)
+                    comments = v.get('comments', 0)
+                    mentions = v.get('mentions', 0)
+                    new_subs = v.get('new_subreddits', 0)
+                    # Skip leading empty months
+                    if not found_data and posts == 0 and comments == 0 and mentions == 0 and new_subs == 0:
+                        # Move to next month without appending
+                        if current.month == 12:
+                            current = current.replace(year=current.year+1, month=1)
+                        else:
+                            current = current.replace(month=current.month+1)
+                        continue
+                    found_data = True
+                    all_items.append({
+                        'date': key,
+                        'posts': posts,
+                        'comments': comments,
+                        'mentions': mentions,
+                        'new_subreddits': new_subs
+                    })
+                    # Move to next month
+                    if current.month == 12:
+                        current = current.replace(year=current.year+1, month=1)
+                    else:
+                        current = current.replace(month=current.month+1)
+                items = all_items
+            except Exception:
+                api_logger.exception('Failed to assemble monthly timeline')
+                items = []
+        else:
+            # Daily aggregation
+            # posts by day
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Post.created_utc), 'YYYY-MM-DD').label('day'),
+                    func.count(models.Post.id)
+                ).filter(models.Post.created_utc >= start_ts).group_by('day').order_by('day').all()
+                for day, cnt in rows:
+                    out_map.setdefault(day, {})['posts'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute daily posts')
+
+            # comments by day
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Comment.created_utc), 'YYYY-MM-DD').label('day'),
+                    func.count(models.Comment.id)
+                ).filter(models.Comment.created_utc >= start_ts).group_by('day').order_by('day').all()
+                for day, cnt in rows:
+                    out_map.setdefault(day, {})['comments'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute daily comments')
+
+            # mentions by day (use Mention.timestamp)
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Mention.timestamp), 'YYYY-MM-DD').label('day'),
+                    func.count(models.Mention.id)
+                ).filter(models.Mention.timestamp >= start_ts).group_by('day').order_by('day').all()
+                for day, cnt in rows:
+                    out_map.setdefault(day, {})['mentions'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute daily mentions')
+
+            # new subreddits first_mentioned by day
+            try:
+                rows = session.query(
+                    func.to_char(func.to_timestamp(models.Subreddit.first_mentioned), 'YYYY-MM-DD').label('day'),
+                    func.count(models.Subreddit.id)
+                ).filter(models.Subreddit.first_mentioned != None).filter(models.Subreddit.first_mentioned >= start_ts).group_by('day').order_by('day').all()
+                for day, cnt in rows:
+                    out_map.setdefault(day, {})['new_subreddits'] = int(cnt or 0)
+            except Exception:
+                api_logger.exception('Failed to compute daily new subreddits')
+
+            # produce a sorted list of dates between start and today where we have data (or zeroes)
+            # Skip leading empty periods for cleaner display
+            try:
+                # build continuous date list from start to now
+                start_date = (datetime.utcnow() - timedelta(days=days)).date()
+                dates = [(start_date + timedelta(days=i)) for i in range(days+1)]
+                all_items = []
+                found_data = False
+                for d in dates:
+                    key = d.strftime('%Y-%m-%d')
+                    v = out_map.get(key, {})
+                    posts = v.get('posts', 0)
+                    comments = v.get('comments', 0)
+                    mentions = v.get('mentions', 0)
+                    new_subs = v.get('new_subreddits', 0)
+                    # Skip leading empty days (no data across all metrics)
+                    if not found_data and posts == 0 and comments == 0 and mentions == 0 and new_subs == 0:
+                        continue
+                    found_data = True
+                    all_items.append({
+                        'date': key,
+                        'posts': posts,
+                        'comments': comments,
+                        'mentions': mentions,
+                        'new_subreddits': new_subs
+                    })
+                items = all_items
+            except Exception:
+                api_logger.exception('Failed to assemble daily timeline')
+                items = []
 
         return { 'items': items }
 

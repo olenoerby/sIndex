@@ -7,66 +7,10 @@
   <!-- Favicon: Material Design MDI pineapple SVG -->
   <link rel="icon" href="/fruit-pineapple.svg" type="image/svg+xml">
   <link rel="shortcut icon" href="/fruit-pineapple.svg">
-  <style>
-    :root{--bg:#fbfdff;--card:#fff;--muted:#6b7280;--accent:#2563eb}
-    *{box-sizing:border-box}
-    body{font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);margin:20px;color:#0f172a}
-    h1{font-size:1.4rem;margin:0 0 6px 0;display:flex;align-items:baseline;gap:8px}
-    .header-count{font-size:0.9rem;color:var(--muted);font-weight:500}
-    .container{max-width:1200px;margin:0 auto;padding:0 12px}
-    .controls{display:flex;flex-direction:column;gap:8px;align-items:stretch;margin-bottom:12px;position:relative}
-    .controls-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .controls-row--actions{justify-content:flex-end}
-    input,select,button{padding:8px 10px;border:1px solid #e6e6e6;border-radius:10px;background:var(--card)}
-    button{cursor:pointer}
-    .btn{border:0;padding:8px 12px;border-radius:10px;background:#eef2ff;color:var(--accent);font-weight:600}
-    .btn:hover{filter:brightness(.98);box-shadow:0 4px 14px rgba(37,99,235,0.12)}
-    /* Fixed width for sort button to avoid layout shift when label changes */
-    #sortDir{width:120px;min-width:120px;max-width:120px;text-align:center}
-    .btn-no-bold{font-weight:400;font-size:1rem;line-height:1.2}
-    .btn-ghost{background:transparent;border:1px solid #e6e6e6;color:inherit}
-    .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(15,23,42,0.04)}
-    table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{padding:10px;border-bottom:1px solid #f1f5f9;text-align:left}
-    /* Ensure table cells vertically center their content so rows remain uniform */
-    tbody td{vertical-align:middle}
-    th{font-weight:600;color:#0f172a;white-space:nowrap}
-    tr:hover{background:#f8fafc}
-    /* Zebra striping: light background for every 2nd row */
-    tbody tr:nth-child(even){background:#ececec}
-    .muted{color:var(--muted);font-size:0.9em}
-    .badge{background:#eef2ff;color:var(--accent);padding:4px 8px;border-radius:999px;font-size:0.85em}
-    .row-actions{display:flex;gap:8px;align-items:center}
-    /* Description button: fixed height and no wrap so it doesn't increase row height */
-    .col-description .btn{height:36px;min-height:36px;padding:6px 10px;display:inline-flex;align-items:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .spinner{width:18px;height:18px;border:3px solid #e6eefc;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;display:inline-block}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    @media (max-width:900px){table{font-size:13px} .controls{gap:6px}}
-    @media (max-width:800px){
-      .controls{flex-direction:column;align-items:stretch}
-      .controls > *{width:100%}
-      .controls label{display:flex;justify-content:space-between;align-items:center}
-      .header-count{display:none}
-    }
-    .table-wrap{overflow:auto}
-    th.sticky{position:sticky;top:0;background:var(--card);z-index:2}
-    .banned{color:#b91c1c;text-decoration:line-through}
-    .not-found{color:#6b7280;font-style:italic}
-    /* column helper classes */
-    .col-name,.col-title,.col-mentions,.col-subscribers,.col-active_users,.col-first_mentioned,.col-last_checked,.col-description{}
-    .info-btn{margin-left:6px;min-width:44px;height:28px;border-radius:8px;font-weight:700;font-size:13px;padding:2px 8px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #e6e6e6;background:var(--card);color:var(--muted);cursor:pointer}
-    .info-btn:hover{box-shadow:0 2px 8px rgba(0,0,0,0.06)}
-    /* Floating about button positioned bottom-right under the table */
-    .about-fab{position:fixed;right:20px;bottom:20px;z-index:90;border-radius:10px;padding:10px 14px;background:var(--card);border:1px solid #e6e6e6;color:var(--muted);box-shadow:0 6px 18px rgba(2,6,23,0.12);cursor:pointer}
-    .about-fab:hover{filter:brightness(.98)}
-    @media (max-width:800px){ .about-fab{right:12px;bottom:12px;padding:8px 10px} }
-    /* Age confirmation modal */
-    .age-modal-overlay{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999}
-    .age-modal-box{background:var(--card);padding:22px;border-radius:12px;max-width:520px;width:92%;box-shadow:0 12px 40px rgba(2,6,23,0.3);text-align:left}
-    .age-modal-box h2{margin:0 0 8px 0;font-size:1.1rem}
-    .age-modal-box p{margin:0 0 14px;color:var(--muted)}
-    .age-modal-actions{display:flex;gap:8px;justify-content:flex-end}
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <h1><a href="/" style="color:inherit;text-decoration:none">Pineapple Subreddit Index</a>
@@ -142,7 +86,8 @@
               <!-- Availability Filters -->
               <div style="font-weight:600;margin-bottom:6px;font-size:0.95rem;color:var(--muted)">Availability</div>
               <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showAvailable" type="checkbox" checked/> Show available subreddits</label>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showBanned" type="checkbox"/> Show unavailable/banned</label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showBanned" type="checkbox"/> Show unavailable/banned</label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showPending" type="checkbox" checked/> Show pending metadata updates</label>
               
               <!-- Content Type Filters -->
               <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Content Type</div>
@@ -267,6 +212,7 @@
           onlyNewWeek: document.getElementById('onlyNewWeek') ? !!document.getElementById('onlyNewWeek').checked : false,
           showAvailable: document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : false,
           showBanned: document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : false,
+          showPending: document.getElementById('showPending') ? !!document.getElementById('showPending').checked : true,
           showNSFW: document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : false,
           showNonNSFW: document.getElementById('showNonNSFW') ? !!document.getElementById('showNonNSFW').checked : false,
           listing: document.getElementById('listing') ? document.getElementById('listing').value : '',
@@ -294,6 +240,7 @@
         if(document.getElementById('onlyNewWeek')) document.getElementById('onlyNewWeek').checked = !!prefs.onlyNewWeek;
         if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = !!prefs.showAvailable;
         if(document.getElementById('showBanned')) document.getElementById('showBanned').checked = !!prefs.showBanned;
+        if(document.getElementById('showPending')) document.getElementById('showPending').checked = (prefs.showPending !== false);
         if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = !!prefs.showNSFW;
         if(document.getElementById('showNonNSFW')) document.getElementById('showNonNSFW').checked = !!prefs.showNonNSFW;
         if(document.getElementById('listing')) document.getElementById('listing').value = prefs.listing || '';
@@ -414,10 +361,12 @@
         }
         const showAvailable = document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : null;
         const showBanned = document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : null;
+        const showPending = document.getElementById('showPending') ? !!document.getElementById('showPending').checked : null;
         const showNSFW = document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : null;
         const showNonNSFW = document.getElementById('showNonNSFW') ? !!document.getElementById('showNonNSFW').checked : null;
         if(showAvailable !== null) parts.push('show_available=' + (showAvailable ? 'true' : 'false'));
         if(showBanned !== null) parts.push('show_banned=' + (showBanned ? 'true' : 'false'));
+        if(showPending !== null) parts.push('show_pending=' + (showPending ? 'true' : 'false'));
         if(showNSFW !== null) parts.push('show_nsfw=' + (showNSFW ? 'true' : 'false'));
         if(showNonNSFW !== null) parts.push('show_non_nsfw=' + (showNonNSFW ? 'true' : 'false'));
         return parts.length ? '&' + parts.join('&') : '';
@@ -902,6 +851,11 @@
         try{ savePrefs(); }catch(err){}
         loadPage(1);
       });
+      const showPendingEl = document.getElementById('showPending');
+      if(showPendingEl) showPendingEl.addEventListener('change', (e)=>{
+        try{ savePrefs(); }catch(err){}
+        loadPage(1);
+      });
       if(showNSFWEl) showNSFWEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
       if(showNonNSFWEl) showNonNSFWEl.addEventListener('change', (e)=>{ updateShowAllLabel(); try{ savePrefs(); }catch(err){} loadPage(1); });
       if(showAllBtn){
@@ -964,6 +918,7 @@
       if(document.getElementById('onlyNewWeek')) document.getElementById('onlyNewWeek').checked = false;
       if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = true;
       document.getElementById('showBanned').checked = false;
+      if(document.getElementById('showPending')) document.getElementById('showPending').checked = true;
       if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = true;
       if(document.getElementById('showNonNSFW')) document.getElementById('showNonNSFW').checked = false;
       document.getElementById('listing').value = '';

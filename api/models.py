@@ -75,6 +75,9 @@ class Mention(Base):
     user_id = Column(String(255), nullable=True, index=True)
     post_id = Column(Integer, ForeignKey('posts.id'))
     timestamp = Column(BigInteger, index=True)
+    # Additional context for analytics
+    mentioned_text = Column(String(255), nullable=True)  # the subreddit name as it appeared (e.g., "gaming")
+    context_snippet = Column(Text, nullable=True)  # short excerpt from the comment around the mention
     __table_args__ = (
         UniqueConstraint('subreddit_id', 'comment_id', name='uq_mention_sub_comment'),
         UniqueConstraint('subreddit_id', 'user_id', name='uq_mention_sub_user'),

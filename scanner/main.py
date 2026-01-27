@@ -89,6 +89,21 @@ def format_ts(ts: int) -> str:
         return str(ts)
 
 
+def clean_username(raw):
+    """Return a normalized reddit username or None when unavailable/deleted."""
+    try:
+        if not raw:
+            return None
+        name = str(raw).strip()
+        if not name:
+            return None
+        if name.lower() in ('[deleted]', 'deleted'):
+            return None
+        return name
+    except Exception:
+        return None
+
+
 # Comma-separated list of subreddit names to ignore. Defaults include a couple examples.
 # Set `IGNORE_SUBREDDITS` in the environment to override (comma-separated).
 IGNORE_SUBREDDITS = set(
@@ -642,9 +657,16 @@ def walk_comments(data, found):
     d = data.get('data', {})
     if kind == 't1':
         body = d.get('body', '')
-        # prefer Reddit internal id (author_fullname) but fall back to username
+        # prefer username; keep id fallback for uniqueness when username missing
+        author_name = clean_username(d.get('author'))
         author_id = d.get('author_fullname') or d.get('author')
-        found.append({'id': d.get('id'), 'body': body, 'created_utc': d.get('created_utc'), 'author_id': author_id})
+        found.append({
+            'id': d.get('id'),
+            'body': body,
+            'created_utc': d.get('created_utc'),
+            'author_id': author_id,
+            'author': author_name
+        })
         # walk replies
         replies = d.get('replies')
         if replies and isinstance(replies, dict):
@@ -656,12 +678,32 @@ def walk_comments(data, found):
 
 
 def extract_subreddits_from_text(text: str):
-    names = set()
+    """Extract subreddit mentions and their contexts from text.
+    Returns a dict: {normalized_name: (raw_text, context_snippet)}
+    """
+    results = {}
     for m in RE_SUB.findall(text or ''):
         nm = normalize(m)
         if 3 <= len(nm) <= 21 and nm not in ('all','random'):
-            names.add(nm)
-    return names
+            # Extract context around this mention (±50 chars)
+            match_idx = (text or '').lower().find(m.lower())
+            if match_idx >= 0:
+                start = max(0, match_idx - 50)
+                end = min(len(text), match_idx + len(m) + 50)
+                context = text[start:end].strip()
+            else:
+                context = m
+            results[nm] = (m, context[:200])  # store raw text and truncated context
+    return results
+
+
+def resolve_comment_user(comment: dict):
+    """Prefer username; fall back to author_id; drop deleted users."""
+    name = clean_username(comment.get('author') or comment.get('author_name'))
+    if name:
+        return name
+    # retain the raw id if present to keep de-duplication working, unless deleted
+    return clean_username(comment.get('author_id'))
 
 
 def process_post(post_item, session: Session, source_subreddit_name: str = None, require_fap_friday: bool = True):
@@ -802,7 +844,13 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
         # create or get comment (idempotent)
         cm = session.query(models.Comment).filter_by(reddit_comment_id=c['id']).first()
         if not cm:
-            cm = models.Comment(reddit_comment_id=c['id'], post_id=post.id, body=c['body'], created_utc=int(c.get('created_utc') or 0), user_id=c.get('author_id'))
+            cm = models.Comment(
+                reddit_comment_id=c['id'],
+                post_id=post.id,
+                body=c['body'],
+                created_utc=int(c.get('created_utc') or 0),
+                user_id=resolve_comment_user(c)
+            )
             session.add(cm)
             session.commit()
             try:
@@ -810,7 +858,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             except Exception:
                 logger.debug('Failed to increment analytics for comment')
 
-        for sname in subnames:
+        for sname, (raw_text, context) in subnames.items():
             # Skip ignored subreddits (configured via IGNORE_SUBREDDITS)
             if sname in IGNORE_SUBREDDITS:
                 continue
@@ -877,7 +925,16 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                     else:
                         exists = session.query(models.Mention).filter_by(subreddit_id=sub.id, comment_id=cm.id).first()
                         if not exists:
-                            mention = models.Mention(subreddit_id=sub.id, comment_id=cm.id, post_id=post.id, timestamp=int(c.get('created_utc') or 0), user_id=cm.user_id, source_subreddit_id=(source_sub.id if source_sub else None))
+                            mention = models.Mention(
+                                subreddit_id=sub.id,
+                                comment_id=cm.id,
+                                post_id=post.id,
+                                timestamp=int(c.get('created_utc') or 0),
+                                user_id=cm.user_id,
+                                source_subreddit_id=(source_sub.id if source_sub else None),
+                                mentioned_text=raw_text,
+                                context_snippet=context
+                            )
                             session.add(mention)
                             session.commit()
                             try:
@@ -896,7 +953,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             # Update stored comment body and metadata
             try:
                 cm.body = fetched_body
-                cm.user_id = c.get('author_id') or cm.user_id
+                cm.user_id = resolve_comment_user(c) or cm.user_id
                 cm.created_utc = int(c.get('created_utc') or cm.created_utc or 0)
                 session.add(cm)
                 session.commit()
@@ -907,7 +964,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             if not subnames:
                 continue
 
-            for sname in subnames:
+            for sname, (raw_text, context) in subnames.items():
                 if sname in IGNORE_SUBREDDITS:
                     continue
                 # get or create subreddit
@@ -950,7 +1007,16 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                     if not existing_by_user:
                         exists = session.query(models.Mention).filter_by(subreddit_id=sub.id, comment_id=cm.id).first()
                         if not exists:
-                            mention = models.Mention(subreddit_id=sub.id, comment_id=cm.id, post_id=post.id, timestamp=int(c.get('created_utc') or 0), user_id=cm.user_id, source_subreddit_id=(source_sub.id if source_sub else None))
+                            mention = models.Mention(
+                                subreddit_id=sub.id,
+                                comment_id=cm.id,
+                                post_id=post.id,
+                                timestamp=int(c.get('created_utc') or 0),
+                                user_id=cm.user_id,
+                                source_subreddit_id=(source_sub.id if source_sub else None),
+                                mentioned_text=raw_text,
+                                context_snippet=context
+                            )
                             session.add(mention)
                             session.commit()
                             try:
