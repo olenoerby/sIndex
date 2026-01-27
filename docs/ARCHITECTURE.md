@@ -56,6 +56,8 @@ Indexes: add indexes on `reddit_post_id`, `reddit_comment_id`, `subreddits.name`
 - `db` - Postgres service (persistent volume)
 - `api` - FastAPI app (read-only)
 - `scanner` - Background worker collects data
+ - `scanner` - Background worker collects data
+ - `redis_worker` - RQ worker that processes background jobs (e.g., subreddit metadata refreshes)
 - `nginx` - reverse proxy to `api` (optional; you can expose API directly)
 
 All services are on internal docker network; expose `api` port 8000 and nginx port 80. Cloudflare Tunnel runs on host to route to nginx.
