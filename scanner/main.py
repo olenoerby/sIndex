@@ -922,7 +922,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
 
     # If there are no comments at all, create the post record and move on
     if not found:
-        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
+        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url, subreddit_id=source_sub.id if source_sub else None)
         session.add(post)
         session.commit()
         try:
@@ -963,7 +963,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
 
     # Ensure a Post row exists (create if missing)
     if not existing:
-        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
+        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url, subreddit_id=source_sub.id if source_sub else None)
         session.add(post)
         session.commit()
         try:
