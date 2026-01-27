@@ -21,6 +21,8 @@
     button{cursor:pointer}
     .btn{border:0;padding:8px 12px;border-radius:10px;background:#eef2ff;color:var(--accent);font-weight:600}
     .btn:hover{filter:brightness(.98);box-shadow:0 4px 14px rgba(37,99,235,0.12)}
+    /* Fixed width for sort button to avoid layout shift when label changes */
+    #sortDir{width:120px;min-width:120px;max-width:120px;text-align:center}
     .btn-no-bold{font-weight:400;font-size:1rem;line-height:1.2}
     .btn-ghost{background:transparent;border:1px solid #e6e6e6;color:inherit}
     .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 1px 2px rgba(15,23,42,0.04)}
@@ -90,67 +92,93 @@
           </div>
         </div>
         <!-- Filter popout: positioned relative to .controls (absolute placement) -->
-        <div id="filterPop" style="display:none;position:absolute;z-index:60;min-width:260px;right:12px;top:64px;padding:10px;border-radius:10px;background:var(--card);box-shadow:0 8px 30px rgba(2,6,23,0.08)">
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <div style="font-weight:700;margin-bottom:6px">Filters</div>
-            <label style="display:flex;justify-content:space-between;align-items:center">Min mentions <input id="minMentions" type="number" placeholder="0" min="0" step="1" style="width:110px"/></label>
-            <label style="display:flex;justify-content:space-between;align-items:center">Max mentions <input id="maxMentions" type="number" placeholder="any" min="1" step="1" style="width:110px"/></label>
-            <label style="display:flex;justify-content:space-between;align-items:center">Min subscribers <input id="minSubscribers" type="number" placeholder="0" min="0" step="1" style="width:110px"/></label>
-            <label style="display:flex;justify-content:space-between;align-items:center">Max subscribers <input id="maxSubscribers" type="number" placeholder="any" min="0" step="1" style="width:110px"/></label>
-            <label style="display:flex;justify-content:space-between;align-items:center"><input id="showAvailable" type="checkbox" checked/> Show available</label>
-            <label style="display:flex;justify-content:space-between;align-items:center"><input id="showBanned" type="checkbox"/> Show unavailable</label>
-            <div style="font-weight:600;margin-top:6px">Content filters</div>
-            <label style="display:flex;justify-content:space-between;align-items:center"><input id="showNSFW" type="checkbox" checked/> Show NSFW</label>
-            <label style="display:flex;justify-content:space-between;align-items:center"><input id="showNonNSFW" type="checkbox"/> Show non-NSFW</label>
-            <div style="display:flex;flex-direction:column;gap:12px">
-              <div style="display:flex;justify-content:space-between;margin-top:6px">
-                <div></div>
-                <div style="display:flex;gap:8px">
-                  <button id="resetFiltersPop" class="btn btn-ghost">Reset filters</button>
-                  <button id="showAll" class="btn btn-ghost">Show all</button>
-                  <button id="closeFilterPop" class="btn">Close</button>
-                </div>
-              </div>
+        <div id="filterPop" style="display:none;position:absolute;z-index:60;min-width:280px;right:12px;top:64px;padding:14px;border-radius:10px;background:var(--card);box-shadow:0 8px 30px rgba(2,6,23,0.08)">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <!-- Options Section (moved to top for primary controls) -->
+            <div>
+              <div style="font-weight:700;margin-bottom:8px;font-size:1.05rem">Display Options</div>
+              <table style="width:100%;border-collapse:collapse">
+                <tr>
+                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Sort by:</td>
+                  <td style="width:55%;padding:6px 4px"><select id="sortSelect" style="width:100%">
+                    <option value="mentions">Mentions</option>
+                    <option value="subscribers">Subscribers</option>
+                    <option value="active_users">Active users</option>
+                    <option value="first_mentioned">First mentioned</option>
+                    <option value="created_utc">Created date</option>
+                    <option value="display_name_prefixed">Display name</option>
+                    <option value="title">Title</option>
+                    <option value="name">Name</option>
+                    <option value="description">Description</option>
+                  </select></td>
+                </tr>
+                <tr>
+                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Results per page:</td>
+                  <td style="width:55%;padding:6px 4px">
+                    <select id="perPageSelect" style="width:100%">
+                      <option value="25">25</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Link opens to:</td>
+                  <td style="width:55%;padding:6px 4px"><select id="listing" style="width:100%">
+                    <option value="" selected>Subreddit home</option>
+                    <option value="hot">Hot</option>
+                    <option value="new">New</option>
+                    <option value="top/?t=all">Top (all time)</option>
+                    <option value="best">Best</option>
+                    <option value="rising">Rising</option>
+                  </select></td>
+                </tr>
+              </table>
+            </div>
 
-              <div style="border-top:1px dashed #e6eefc;padding-top:8px">
-                <div style="font-weight:700;margin-bottom:6px">Options</div>
-                <table style="width:100%;border-collapse:collapse">
-                  <tr>
-                    <td style="width:50%;padding:6px 4px;vertical-align:middle">Link opens to:</td>
-                    <td style="width:50%;padding:6px 4px"><select id="listing" style="width:100%">
-                      <option value="" selected>Default</option>
-                      <option value="hot">Hot</option>
-                      <option value="top/?t=all">Top - All time</option>
-                      <option value="best">Best</option>
-                      <option value="new">New</option>
-                      <option value="rising">Rising</option>
-                    </select></td>
-                  </tr>
-                  <tr>
-                    <td style="width:50%;padding:6px 4px;vertical-align:middle">Sort by:</td>
-                    <td style="width:50%;padding:6px 4px"><select id="sortSelect" style="width:100%">
-                      <option value="mentions">Mentions</option>
-                      <option value="subscribers">Subscribers</option>
-                      <option value="active_users">Active users</option>
-                      <option value="created_utc">Created</option>
-                      <option value="first_mentioned">First mentioned</option>
-                      <option value="display_name_prefixed">Display name</option>
-                      <option value="title">Title</option>
-                      <option value="description">Description</option>
-                      <option value="name">Name</option>
-                    </select></td>
-                  </tr>
-                  <tr>
-                    <td style="width:50%;padding:6px 4px;vertical-align:middle">Per page:</td>
-                    <td style="width:50%;padding:6px 4px">
-                      <select id="perPageSelect" style="width:100%">
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                      </select>
-                    </td>
-                  </tr>
-                </table>
+            <div style="border-top:1px solid #e6eefc;padding-top:10px">
+              <div style="font-weight:700;margin-bottom:8px;font-size:1.05rem">Filters</div>
+              
+              <!-- Availability Filters -->
+              <div style="font-weight:600;margin-bottom:6px;font-size:0.95rem;color:var(--muted)">Availability</div>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showAvailable" type="checkbox" checked/> Show available subreddits</label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showBanned" type="checkbox"/> Show unavailable/banned</label>
+              
+              <!-- Content Type Filters -->
+              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Content Type</div>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showNSFW" type="checkbox" checked/> Show NSFW</label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showNonNSFW" type="checkbox"/> Show SFW (non-NSFW)</label>
+              
+              <!-- Discovery Date Filters -->
+              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Discovery Date</div>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="onlyNewWeek" type="checkbox"/> New this week ⭐</label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <select id="firstMentionedPreset" style="width:100%">
+                  <option value="" selected>All time</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="custom">Custom days...</option>
+                </select>
+              </label>
+              <label id="customDaysLabel" style="display:none;justify-content:space-between;align-items:center;margin-bottom:10px">Custom days: <input id="customDays" type="number" placeholder="30" min="1" step="1" style="width:110px"/></label>
+              
+              <!-- Numeric Range Filters -->
+              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Mentions Range</div>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:0.9rem">Minimum <input id="minMentions" type="number" placeholder="0" min="0" step="1" style="width:100px"/></label>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:0.9rem">Maximum <input id="maxMentions" type="number" placeholder="∞" min="1" step="1" style="width:100px"/></label>
+              
+              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Subscribers Range</div>
+              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:0.9rem">Minimum <input id="minSubscribers" type="number" placeholder="0" min="0" step="1" style="width:100px"/></label>
+              <label style="display:flex;justify-content:space-between;align-items:center;font-size:0.9rem">Maximum <input id="maxSubscribers" type="number" placeholder="∞" min="0" step="1" style="width:100px"/></label>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display:flex;justify-content:space-between;margin-top:12px;gap:8px;border-top:1px solid #e6eefc;padding-top:12px">
+              <button id="showAll" class="btn btn-ghost" style="font-size:0.9rem">Show All</button>
+              <div style="display:flex;gap:8px">
+                <button id="resetFiltersPop" class="btn btn-ghost" style="font-size:0.9rem">Reset</button>
+                <button id="closeFilterPop" class="btn" style="font-size:0.9rem">Apply</button>
               </div>
             </div>
           </div>
@@ -208,13 +236,34 @@
       return v ? v.pop() : '';
     }
 
+    // Normalize user-entered subreddit queries to a bare subreddit name.
+    // Accepts forms like '/r/name', 'r/name', 'https://reddit.com/r/name', or 'rname'.
+    function normalizeQuery(raw){
+      try{
+        const qraw = String(raw || '').trim();
+        // strip full reddit URL
+        let q = qraw.replace(/^https?:\/\/(?:www\.)?reddit\.com\/r\//i, '');
+        // strip leading /r/ or r/ 
+        q = q.replace(/^\/?r\//i, '').trim();
+        // accept shorthand rname
+        const m = qraw.match(/^r([A-Za-z0-9_]{3,21})$/i);
+        if(m && m[1]) q = m[1];
+        return q;
+      }catch(e){ return String(raw || '').trim(); }
+    }
+
     function savePrefs(){
       try{
+        const rawQ = (document.getElementById('q') && document.getElementById('q').value) ? String(document.getElementById('q').value).trim() : '';
         const p = {
+          q: normalizeQuery(rawQ),
           minMentions: document.getElementById('minMentions') ? document.getElementById('minMentions').value : '',
           maxMentions: document.getElementById('maxMentions') ? document.getElementById('maxMentions').value : '',
           minSubscribers: document.getElementById('minSubscribers') ? document.getElementById('minSubscribers').value : '',
           maxSubscribers: document.getElementById('maxSubscribers') ? document.getElementById('maxSubscribers').value : '',
+          firstMentionedPreset: document.getElementById('firstMentionedPreset') ? document.getElementById('firstMentionedPreset').value : '',
+          customDays: document.getElementById('customDays') ? document.getElementById('customDays').value : '',
+          onlyNewWeek: document.getElementById('onlyNewWeek') ? !!document.getElementById('onlyNewWeek').checked : false,
           showAvailable: document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : false,
           showBanned: document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : false,
           showNSFW: document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : false,
@@ -239,11 +288,15 @@
         if(document.getElementById('maxMentions')) document.getElementById('maxMentions').value = prefs.maxMentions || '';
         if(document.getElementById('minSubscribers')) document.getElementById('minSubscribers').value = prefs.minSubscribers || '';
         if(document.getElementById('maxSubscribers')) document.getElementById('maxSubscribers').value = prefs.maxSubscribers || '';
+        if(document.getElementById('firstMentionedPreset')) document.getElementById('firstMentionedPreset').value = prefs.firstMentionedPreset || '';
+        if(document.getElementById('customDays')) document.getElementById('customDays').value = prefs.customDays || '';
+        if(document.getElementById('onlyNewWeek')) document.getElementById('onlyNewWeek').checked = !!prefs.onlyNewWeek;
         if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = !!prefs.showAvailable;
         if(document.getElementById('showBanned')) document.getElementById('showBanned').checked = !!prefs.showBanned;
         if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = !!prefs.showNSFW;
         if(document.getElementById('showNonNSFW')) document.getElementById('showNonNSFW').checked = !!prefs.showNonNSFW;
         if(document.getElementById('listing')) document.getElementById('listing').value = prefs.listing || '';
+        if(document.getElementById('q')) document.getElementById('q').value = prefs.q || '';
         if(prefs.currentSort) currentSort = prefs.currentSort;
         if(prefs.currentSortDir) currentSortDir = prefs.currentSortDir;
         // reflect saved sort selection in dropdown
@@ -282,7 +335,19 @@
     async function loadPage(page = 1){
       document.getElementById('count').textContent = 'Loading...';
       const loadingDiv = document.getElementById('loading');
-      loadingDiv.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+      // Replace the Reload button with a spinner to avoid adding an extra inline element
+      const reloadBtn = document.getElementById('reload');
+      let _origReload = null;
+      if(reloadBtn){
+        // persist original content so we can restore it
+        if(!reloadBtn.dataset.origContent) reloadBtn.dataset.origContent = reloadBtn.innerHTML || '';
+        _origReload = reloadBtn.dataset.origContent;
+        reloadBtn.disabled = true;
+        reloadBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+      } else {
+        // fallback to the small loading div
+        loadingDiv.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
+      }
       setControlsDisabled(true);
       try{
         const qparams = buildFilterQueryParams();
@@ -292,13 +357,16 @@
         data = json.items || [];
         filteredCount = json.total || 0;
         currentPage = page;
-        loadingDiv.innerHTML = '';
+        // restore reload button content
+        if(reloadBtn){ try{ reloadBtn.innerHTML = reloadBtn.dataset.origContent || '↻'; reloadBtn.disabled = false; }catch(e){} }
+        else { loadingDiv.innerHTML = ''; }
         render();
         renderPaginationControls();
         setControlsDisabled(false);
       }catch(e){
         document.getElementById('count').textContent = 'Load failed: ' + e;
-        loadingDiv.innerHTML = '';
+        if(reloadBtn){ try{ reloadBtn.innerHTML = reloadBtn.dataset.origContent || '↻'; reloadBtn.disabled = false; }catch(e){} }
+        else { loadingDiv.innerHTML = ''; }
         setControlsDisabled(false);
       }
     }
@@ -306,14 +374,8 @@
     function buildFilterQueryParams(){
       try{
         const parts = [];
-        // Normalize query: strip leading '/r/' or 'r/' so users can paste '/r/name' or 'r/name'
         const qraw = (document.getElementById('q') && document.getElementById('q').value) ? String(document.getElementById('q').value).trim() : '';
-        // strip full reddit URL (/r/name, r/name, or reddit.com/r/name)
-        let q = qraw.replace(/^https?:\/\/(?:www\.)?reddit\.com\/r\//i, '');
-        q = q.replace(/^\/?r\//i, '').trim();
-        // also accept 'rname' (no slash) and strip leading 'r' when it looks like r<subreddit>
-        const m = qraw.match(/^r([A-Za-z0-9_]{3,21})$/i);
-        if(m){ q = m[1]; }
+        const q = normalizeQuery(qraw);
         if(q) parts.push('q=' + encodeURIComponent(q));
         const mm = document.getElementById('minMentions') ? document.getElementById('minMentions').value : '';
         if(mm) parts.push('min_mentions=' + encodeURIComponent(mm));
@@ -323,6 +385,17 @@
         if(ms) parts.push('min_subscribers=' + encodeURIComponent(ms));
         const mS = document.getElementById('maxSubscribers') ? document.getElementById('maxSubscribers').value : '';
         if(mS) parts.push('max_subscribers=' + encodeURIComponent(mS));
+        const onlyNewWeek = document.getElementById('onlyNewWeek') ? document.getElementById('onlyNewWeek').checked : false;
+        const firstMentionedPreset = document.getElementById('firstMentionedPreset') ? document.getElementById('firstMentionedPreset').value : '';
+        const customDays = document.getElementById('customDays') ? document.getElementById('customDays').value : '';
+        // If "Only new (7 days)" is checked, override any other date filter
+        if(onlyNewWeek){
+          parts.push('first_mentioned_days=7');
+        } else if(firstMentionedPreset === 'custom' && customDays){
+          parts.push('first_mentioned_days=' + encodeURIComponent(customDays));
+        } else if(firstMentionedPreset && firstMentionedPreset !== 'custom' && firstMentionedPreset !== ''){
+          parts.push('first_mentioned_days=' + encodeURIComponent(firstMentionedPreset));
+        }
         const showAvailable = document.getElementById('showAvailable') ? !!document.getElementById('showAvailable').checked : null;
         const showBanned = document.getElementById('showBanned') ? !!document.getElementById('showBanned').checked : null;
         const showNSFW = document.getElementById('showNSFW') ? !!document.getElementById('showNSFW').checked : null;
@@ -338,8 +411,11 @@
     // Disable/enable interactive controls while a server request is in progress
     function setControlsDisabled(disabled){
       try{
+        // Only disable pagination controls and the reload/sort UI while loading.
+        // Keep search and filter inputs enabled so the user can adjust filters
+        // even if the table data hasn't loaded yet.
         document.querySelectorAll('#paginationControls button, #paginationControls select, #paginationControls input, #paginationControlsBottom button, #paginationControlsBottom select, #paginationControlsBottom input').forEach(el => el.disabled = disabled);
-        const maybe = ['reload','filterBtn','sortDir','resetFilters','listing','sortSelect'];
+        const maybe = ['reload','sortDir'];
         maybe.forEach(id => { const el = document.getElementById(id); if(el) el.disabled = disabled; });
       }catch(e){/* ignore */}
     }
@@ -609,25 +685,35 @@
         const firstTd = document.createElement('td');
         firstTd.classList.add('col-first_mentioned','muted');
         if (s.first_mentioned) {
-          firstTd.textContent = new Date(s.first_mentioned*1000).toLocaleDateString();
+          const mentionDate = new Date(s.first_mentioned*1000);
+          const dateStr = mentionDate.toLocaleDateString();
+          // Add golden star if mentioned within last 7 days
+          const nowTs = Math.floor(Date.now() / 1000);
+          const sevenDaysAgo = nowTs - (7 * 24 * 60 * 60);
+          if (s.first_mentioned >= sevenDaysAgo) {
+            firstTd.textContent = dateStr + ' ⭐';
+          } else {
+            firstTd.textContent = dateStr;
+          }
         } else {
           firstTd.textContent = '';
         }
         tr.appendChild(firstTd);
         const descTd = document.createElement('td'); descTd.classList.add('col-description','muted');
-        const descText = (s.description||'')
+        const descText = (s.description||'');
         if(isUnprocessed){
           descTd.textContent = '—';
-        } else if(descText.length > 32){
+        } else {
+          // Always render a button that opens the description modal so users
+          // can view the full description regardless of its length.
           const btn = document.createElement('button');
           btn.className = 'btn btn-ghost';
-          btn.textContent = descText.slice(0,32) + '...';
+          if(descText && descText.length > 32) btn.textContent = descText.slice(0,32) + '...';
+          else btn.textContent = descText || '—';
           btn.addEventListener('click', ()=>{
             openDescriptionModal(s.public_description_html || s.description || '');
           });
           descTd.appendChild(btn);
-        }else{
-          descTd.textContent = descText || '—';
         }
         tr.appendChild(descTd);
         tbody.appendChild(tr);
@@ -976,6 +1062,12 @@
       document.getElementById('q').value = '';
       document.getElementById('minMentions').value = '';
       if(document.getElementById('maxMentions')) document.getElementById('maxMentions').value = '';
+      if(document.getElementById('minSubscribers')) document.getElementById('minSubscribers').value = '';
+      if(document.getElementById('maxSubscribers')) document.getElementById('maxSubscribers').value = '';
+      if(document.getElementById('firstMentionedPreset')) document.getElementById('firstMentionedPreset').value = '';
+      if(document.getElementById('customDays')) document.getElementById('customDays').value = '';
+      if(document.getElementById('customDaysLabel')) document.getElementById('customDaysLabel').style.display = 'none';
+      if(document.getElementById('onlyNewWeek')) document.getElementById('onlyNewWeek').checked = false;
       if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = true;
       document.getElementById('showBanned').checked = false;
       if(document.getElementById('showNSFW')) document.getElementById('showNSFW').checked = true;
@@ -1022,6 +1114,42 @@
       perPageSelect.value = String(perPage);
       perPageSelect.addEventListener('change', ()=>{
         perPage = Number(perPageSelect.value);
+        try{ savePrefs(); }catch(e){}
+        loadPage(1);
+      });
+    }
+
+    // wire date filter controls
+    const firstMentionedPreset = document.getElementById('firstMentionedPreset');
+    const customDaysLabel = document.getElementById('customDaysLabel');
+    const customDaysInput = document.getElementById('customDays');
+    if(firstMentionedPreset){
+      // Load initial state from prefs
+      if(prefs.firstMentionedPreset === 'custom' && customDaysLabel){
+        customDaysLabel.style.display = 'flex';
+      }
+      firstMentionedPreset.addEventListener('change', ()=>{
+        const val = firstMentionedPreset.value;
+        if(val === 'custom' && customDaysLabel){
+          customDaysLabel.style.display = 'flex';
+        } else {
+          if(customDaysLabel) customDaysLabel.style.display = 'none';
+        }
+        try{ savePrefs(); }catch(e){}
+        loadPage(1);
+      });
+    }
+    if(customDaysInput){
+      customDaysInput.addEventListener('input', ()=>{
+        try{ savePrefs(); }catch(e){}
+        debouncedLoadPage();
+      });
+    }
+
+    // wire onlyNewWeek checkbox
+    const onlyNewWeekCheckbox = document.getElementById('onlyNewWeek');
+    if(onlyNewWeekCheckbox){
+      onlyNewWeekCheckbox.addEventListener('change', ()=>{
         try{ savePrefs(); }catch(e){}
         loadPage(1);
       });
