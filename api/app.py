@@ -37,7 +37,7 @@ app = FastAPI(title="Pineapple Index API")
 
 def fetch_sub_about(name: str):
     url = f"https://www.reddit.com/r/{name}/about.json"
-    headers = {"User-Agent": "PineappleIndexAPI/0.1"}
+    headers = {"User-Agent": "SindexAPI/0.1"}
     r = httpx.get(url, headers=headers)
     try:
         import time as _time
@@ -147,14 +147,12 @@ def api_index():
 class SubredditOut(BaseModel):
     name: str
     display_name: Optional[str]
-    display_name_prefixed: Optional[str]
     title: Optional[str]
     created_utc: Optional[int]
     first_mentioned: Optional[int]
     subscribers: Optional[int]
     active_users: Optional[int]
     description: Optional[str]
-    public_description_html: Optional[str]
     is_banned: Optional[bool]
     over18: Optional[bool]
     last_checked: Optional[datetime]
@@ -258,21 +256,21 @@ def list_subreddits(
         # Build OR conditions for what to include
         avail_conditions = []
         if show_available is True:
-            # Include available subreddits (not banned and not not_found)
+            # Include available subreddits (not banned and not is_not_found)
             try:
                 avail_conditions.append(
                     ((models.Subreddit.is_banned == False) | (models.Subreddit.is_banned == None)) &
-                    ((models.Subreddit.not_found == False) | (models.Subreddit.not_found == None))
+                    ((models.Subreddit.is_not_found == False) | (models.Subreddit.is_not_found == None))
                 )
             except Exception:
                 avail_conditions.append(
-                    (models.Subreddit.is_banned != True) & (models.Subreddit.not_found != True)
+                    (models.Subreddit.is_banned != True) & (models.Subreddit.is_not_found != True)
                 )
         if show_banned is True:
-            # Include banned/unavailable subreddits (is_banned=True OR not_found=True)
+            # Include banned/unavailable subreddits (is_banned=True OR is_not_found=True)
             try:
                 avail_conditions.append(
-                    (models.Subreddit.is_banned == True) | (models.Subreddit.not_found == True)
+                    (models.Subreddit.is_banned == True) | (models.Subreddit.is_not_found == True)
                 )
             except Exception:
                 avail_conditions.append(models.Subreddit.is_banned == True)
@@ -367,14 +365,12 @@ def list_subreddits(
             items.append(SubredditOut(
                 name=s.name,
                 display_name=s.display_name,
-                display_name_prefixed=s.display_name_prefixed,
                 title=s.title,
                 created_utc=s.created_utc,
                 first_mentioned=s.first_mentioned,
                 subscribers=s.subscribers,
                 active_users=s.active_users,
                 description=s.description,
-                public_description_html=getattr(s, 'public_description_html', None),
                 is_banned=s.is_banned,
                 over18=s.is_over18,
                 last_checked=s.last_checked,
@@ -584,20 +580,14 @@ def get_subreddit(name: str):
                     except Exception:
                         pass
                     s.is_banned = s.is_banned or False
-                    s.not_found = False
+                    s.is_not_found = False
                 elif r.status_code in (403, 404):
                     if r.status_code == 403:
                         s.is_banned = True
-                        s.not_found = False
+                        s.is_not_found = False
                     else:
-                        s.not_found = True
+                        s.is_not_found = True
                         s.is_banned = False
-                    try:
-                        payload = r.json()
-                        if isinstance(payload, dict) and payload.get('reason'):
-                            s.ban_reason = str(payload.get('reason'))
-                    except Exception:
-                        pass
                 else:
                     api_logger.debug(f"/r/{s.name} metadata fetch returned status {r.status_code}")
 
@@ -605,7 +595,7 @@ def get_subreddit(name: str):
                 session.add(s)
                 session.commit()
                 mentions = session.query(func.count(models.Mention.id)).filter(models.Mention.subreddit_id == s.id).scalar()
-                return {"ok": True, "subreddit": {"name": s.name, "display_name": s.display_name, "title": s.title, "subscribers": s.subscribers, "active_users": s.active_users, "description": s.description, "is_banned": s.is_banned, "not_found": s.not_found, "ban_reason": s.ban_reason, "last_checked": s.last_checked, "mentions": mentions}}
+                return {"ok": True, "subreddit": {"name": s.name, "display_name": s.display_name, "title": s.title, "subscribers": s.subscribers, "active_users": s.active_users, "description": s.description, "is_banned": s.is_banned, "is_not_found": s.is_not_found, "last_checked": s.last_checked, "mentions": mentions}}
             except Exception:
                 session.rollback()
                 raise HTTPException(status_code=500, detail="Failed to refresh subreddit metadata")
