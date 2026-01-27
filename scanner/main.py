@@ -75,7 +75,6 @@ LAST_SUBREDDIT_REQUEST = 0.0
 # Optional testing controls:
 # If set, scanner will only process up to this many Friday posts and then exit.
 TEST_POST_LIMIT = int(os.getenv('TEST_POST_LIMIT')) if os.getenv('TEST_POST_LIMIT') else None
-TEST_POST_IDS = [p.strip() for p in os.getenv('TEST_POST_IDS', '').split(',') if p.strip()]
 
 engine = create_engine(DATABASE_URL, future=True)
 
@@ -1461,9 +1460,6 @@ def main_loop():
                             if not after_sub:
                                 logger.info(f"Scanning new posts from /r/{subname}")
                             for p in children:
-                                pid = p.get('data', {}).get('id')
-                                if TEST_POST_IDS and pid not in TEST_POST_IDS:
-                                    continue
                                 pdata = p.get('data', {})
                                 
                                 # Apply NSFW filter if configured
@@ -1523,10 +1519,6 @@ def main_loop():
                     discovered_overall = set()
                     exit_after_batch = False
                     for p in children:
-                        # If TEST_POST_IDS is set, skip posts not in the list
-                        pid = p.get('data', {}).get('id')
-                        if TEST_POST_IDS and pid not in TEST_POST_IDS:
-                            continue
                         processed, discovered = process_post(p, session)
                         if processed:
                             processed_count += 1
