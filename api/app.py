@@ -311,96 +311,23 @@ def list_subreddits(
         items = []
         for row in rows:
             s, mentions = row
-            # update metadata on-demand if missing or stale
-            now = datetime.utcnow()
-            needs_update = False
-            if not s.last_checked:
-                needs_update = True
-            else:
-                try:
-                    if (now - s.last_checked) > timedelta(days=META_CACHE_DAYS):
-                        needs_update = True
-                except Exception:
-                    needs_update = True
-
-            if needs_update:
-                try:
-                    r = fetch_sub_about(s.name)
-                    if r.status_code == 200:
-                        payload = r.json()
-                        # if Reddit returns a top-level reason (e.g. banned), record it
-                        if isinstance(payload, dict) and payload.get('reason'):
-                            s.is_banned = True
-                            s.ban_reason = str(payload.get('reason'))
-                        data = payload.get('data', {}) if isinstance(payload, dict) else {}
-
-                        def safe_int(v):
-                            try:
-                                return int(v) if v is not None else None
-                            except Exception:
-                                return None
-
-                        # general fields
-                        s.display_name = data.get('display_name') or s.display_name
-                        s.display_name_prefixed = data.get('display_name_prefixed') or s.display_name_prefixed
-                        s.title = data.get('title') or s.title
-
-                        created = safe_int(data.get('created_utc'))
-                        if created:
-                            s.created_utc = created
-                        subs = safe_int(data.get('subscribers'))
-                        if subs is not None:
-                            s.subscribers = subs
-                        active = safe_int(data.get('accounts_active') or data.get('active_user_count') or data.get('active_accounts'))
-                        if active is not None:
-                            s.active_users = active
-                        public_desc = data.get('public_description')
-                        if public_desc:
-                            s.description = public_desc
-
-                            try:
-                                s.public_description_html = data.get('public_description_html') or s.public_description_html
-                            except Exception:
-                                pass
-
-                        # booleans and misc
-                        try:
-                            s.allow_videogifs = bool(data.get('allow_videogifs')) if data.get('allow_videogifs') is not None else s.allow_videogifs
-                        except Exception:
-                            pass
-                        try:
-                            s.allow_videos = bool(data.get('allow_videos')) if data.get('allow_videos') is not None else s.allow_videos
-                        except Exception:
-                            pass
-                        s.subreddit_type = data.get('subreddit_type') or s.subreddit_type
-                        s.lang = data.get('lang') or s.lang
-                        s.url = data.get('url') or s.url
-                        try:
-                            ov = data.get('over18') if 'over18' in data else data.get('over_18')
-                            if ov is not None:
-                                s.over18 = bool(ov)
-                        except Exception:
-                            pass
-                        s.is_banned = s.is_banned or False
-                    elif r.status_code in (403, 404):
-                        s.is_banned = True
-                        api_logger.info(f"/r/{s.name} returned {r.status_code}; marking as banned")
-                        try:
-                            payload = r.json()
-                            if isinstance(payload, dict) and payload.get('reason'):
-                                s.ban_reason = str(payload.get('reason'))
-                        except Exception:
-                            pass
-                    else:
-                        api_logger.debug(f"/r/{s.name} metadata fetch returned status {r.status_code}")
-                    # mark last_checked and commit using the current session
-                    s.last_checked = datetime.utcnow()
-                    session.add(s)
-                    session.commit()
-                except Exception:
-                    api_logger.exception(f"Failed to update metadata for /r/{s.name}")
-
-            items.append(SubredditOut(name=s.name, display_name=s.display_name, display_name_prefixed=s.display_name_prefixed, title=s.title, created_utc=s.created_utc, first_mentioned=s.first_mentioned, subscribers=s.subscribers, active_users=s.active_users, description=s.description, public_description_html=getattr(s, 'public_description_html', None), is_banned=s.is_banned, over18=s.over18, last_checked=s.last_checked, mentions=mentions).dict())
+            # API is read-only - just return database data. Scanner handles all metadata updates.
+            items.append(SubredditOut(
+                name=s.name,
+                display_name=s.display_name,
+                display_name_prefixed=s.display_name_prefixed,
+                title=s.title,
+                created_utc=s.created_utc,
+                first_mentioned=s.first_mentioned,
+                subscribers=s.subscribers,
+                active_users=s.active_users,
+                description=s.description,
+                public_description_html=getattr(s, 'public_description_html', None),
+                is_banned=s.is_banned,
+                over18=s.over18,
+                last_checked=s.last_checked,
+                mentions=mentions
+            ).dict())
 
         has_more = (offset + len(items)) < total
         return {"items": items, "total": total, "page": page, "per_page": per_page, "has_more": has_more}
