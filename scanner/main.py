@@ -581,6 +581,13 @@ def fetch_subreddit_posts(subname: str, after: str = None):
         logger.warning(f"Network error fetching /r/{subname} posts (after={after}): {e}")
         raise
 
+    # Record this API call in distributed limiter so other containers see it
+    try:
+        if distributed_rate_limiter:
+            distributed_rate_limiter.record_api_call()
+    except Exception:
+        pass
+
     # Log response status and headers for debugging
     logger.debug(f"fetch_subreddit_posts /r/{subname}: status_code={r.status_code}, headers={dict(r.headers)}")
     
@@ -655,6 +662,13 @@ def fetch_post_comments(post_id: str, max_retries: int = 5):
                 time.sleep(sleep_for)
                 continue
             raise
+
+        # Record this API call for distributed rate limiting coordination
+        try:
+            if distributed_rate_limiter:
+                distributed_rate_limiter.record_api_call()
+        except Exception:
+            pass
 
         # Handle 429 Too Many Requests specially
         if r.status_code == 429:

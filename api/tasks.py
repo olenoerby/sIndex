@@ -7,6 +7,16 @@ from . import models
 from .utils import parse_retry_after_seconds
 from sqlalchemy import create_engine
 from redis import Redis
+from api.distributed_rate_limiter import DistributedRateLimiter
+
+# Initialize distributed rate limiter (best-effort)
+try:
+    API_RATE_DELAY_SECONDS = float(os.getenv('API_RATE_DELAY_SECONDS', os.getenv('API_RATE_DELAY', '6.5')))
+    API_MAX_CALLS_MINUTE = int(os.getenv('API_MAX_CALLS_MINUTE', os.getenv('API_MAX_CALLS_MIN', '30')))
+    distributed_rate_limiter = DistributedRateLimiter(redis_url=REDIS_URL, min_delay_seconds=API_RATE_DELAY_SECONDS, max_calls_per_minute=API_MAX_CALLS_MINUTE)
+    distributed_rate_limiter.set_container_name('api_tasks')
+except Exception:
+    distributed_rate_limiter = None
 
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 logger = logging.getLogger('api.tasks')
@@ -44,6 +54,12 @@ def refresh_subreddit_job(name: str):
             headers = {"User-Agent": "PineappleIndexWorker/0.1"}
             # simple request with small timeout; worker can rely on RQ retries
             r = httpx.get(url, headers=headers, timeout=15.0)
+            # Record distributed API call so global limiter sees it
+            try:
+                if distributed_rate_limiter:
+                    distributed_rate_limiter.record_api_call()
+            except Exception:
+                pass
             if r.status_code == 200:
                 payload = r.json()
                 if isinstance(payload, dict) and payload.get('reason'):

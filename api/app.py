@@ -4,6 +4,7 @@ import time
 import httpx
 import os
 import logging
+from api.distributed_rate_limiter import DistributedRateLimiter
 
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
@@ -27,6 +28,16 @@ api_logger.addHandler(sh)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://pineapple:pineapple@db:5432/pineapple")
 META_CACHE_DAYS = int(os.getenv('META_CACHE_DAYS', '7'))
 API_RATE_DELAY = float(os.getenv('API_RATE_DELAY', '6.5'))
+REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+
+# Initialize distributed rate limiter (best-effort)
+try:
+    API_RATE_DELAY_SECONDS = float(os.getenv('API_RATE_DELAY_SECONDS', API_RATE_DELAY))
+    API_MAX_CALLS_MINUTE = int(os.getenv('API_MAX_CALLS_MINUTE', os.getenv('API_MAX_CALLS_MIN', '30')))
+    distributed_rate_limiter = DistributedRateLimiter(redis_url=REDIS_URL, min_delay_seconds=API_RATE_DELAY_SECONDS, max_calls_per_minute=API_MAX_CALLS_MINUTE)
+    distributed_rate_limiter.set_container_name('api')
+except Exception:
+    distributed_rate_limiter = None
 
 from sqlalchemy import create_engine
 engine = create_engine(DATABASE_URL, echo=False, future=True)
@@ -38,12 +49,24 @@ app = FastAPI(title="Pineapple Index API")
 def fetch_sub_about(name: str):
     url = f"https://www.reddit.com/r/{name}/about.json"
     headers = {"User-Agent": "SindexAPI/0.1"}
-    r = httpx.get(url, headers=headers)
+    # Respect distributed/local limiter before making request
     try:
-        import time as _time
-        _time.sleep(API_RATE_DELAY)
+        if distributed_rate_limiter:
+            distributed_rate_limiter.wait_if_needed()
+        else:
+            import time as _time
+            _time.sleep(API_RATE_DELAY)
     except Exception:
         pass
+
+    r = httpx.get(url, headers=headers)
+    # Record API call for distributed limiter
+    try:
+        if distributed_rate_limiter:
+            distributed_rate_limiter.record_api_call()
+    except Exception:
+        pass
+
     return r
 @app.post("/subreddits/{name}/refresh")
 def refresh_subreddit(name: str, api_key: Optional[str] = Query(None)):
