@@ -75,7 +75,7 @@ def refresh_subreddit_job(name: str):
                 try:
                     ov = data.get('over18') if 'over18' in data else data.get('over_18')
                     if ov is not None:
-                        sub.over18 = bool(ov)
+                        sub.is_over18 = bool(ov)
                 except Exception:
                     pass
                 sub.is_banned = sub.is_banned or False

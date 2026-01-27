@@ -73,6 +73,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_comment_reddit_comment_id'), 'comment', ['reddit_comment_id'], unique=False)
     op.create_index(op.f('ix_comment_created_utc'), 'comment', ['created_utc'], unique=False)
+    op.create_index(op.f('ix_comment_username'), 'comment', ['username'], unique=False)
 
     # Create mention table
     op.create_table(
@@ -103,6 +104,8 @@ def upgrade() -> None:
         sa.Column('last_scan_started', sa.DateTime(), nullable=True),
         sa.Column('last_scan_duration', sa.Float(), nullable=True),
         sa.Column('last_scan_new_mentions', sa.Integer(), nullable=True),
+        sa.Column('created_at', sa.DateTime(), nullable=True),
+        sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint('id'),
     )
 

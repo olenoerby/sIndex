@@ -19,7 +19,7 @@
           <h1>Analytics Control Room</h1>
           <p class="lead">A wide-angle view of all Reddit mentions we track. Explore volume over time, identify standout subreddits and posts, and keep tabs on scanner health.</p>
         </div>
-        <button id="refreshBtn" class="btn" style="margin-top: 0; white-space: nowrap;">↻ Refresh</button>
+        <button id="refreshBtn" class="btn" style="margin-top: 0; white-space: nowrap; font-family: monospace; min-width: 160px; text-align: center;">↻ Refresh (45s)</button>
       </div>
       <div class="meta">
         <span class="pill" id="lastScanned">Last DB run: —</span>
@@ -482,26 +482,68 @@
     bindControls();
     initializeDateRange();
     
-    // Manual refresh button - preserves current date range selection
-    document.getElementById('refreshBtn').addEventListener('click', async () => {
+    // Countdown timer state
+    let countdownSeconds = 45;
+    let countdownInterval = null;
+    
+    function updateCountdownDisplay(){
       const btn = document.getElementById('refreshBtn');
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
+      btn.textContent = `↻ Refresh (${countdownSeconds}s)`;
+    }
+    
+    function startCountdown(){
+      countdownSeconds = 45;
+      updateCountdownDisplay();
       
+      if(countdownInterval) clearInterval(countdownInterval);
+      
+      countdownInterval = setInterval(() => {
+        countdownSeconds--;
+        updateCountdownDisplay();
+        
+        if(countdownSeconds <= 0){
+          countdownSeconds = 45;
+          updateCountdownDisplay();
+        }
+      }, 1000);
+    }
+    
+    async function doRefresh(){
       await Promise.all([
         fetchStats(),
         fetchDaily(currentDays),
         fetchTopBlocks()
       ]);
       
+      // Reset countdown
+      countdownSeconds = 45;
+      updateCountdownDisplay();
+    }
+    
+    // Manual refresh button - preserves current date range selection
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      
+      await doRefresh();
+      
       btn.disabled = false;
       btn.style.opacity = '1';
     });
     
+    // Initial load
     fetchStats();
     fetchDaily(currentDays);
     fetchTopBlocks();
-    setInterval(() => { fetchStats(); fetchDaily(currentDays); fetchTopBlocks(); }, 45000);
+    startCountdown();
+    
+    // Auto-refresh every 45 seconds
+    setInterval(() => { 
+      doRefresh();
+      countdownSeconds = 45;
+      updateCountdownDisplay();
+    }, 45000);
   </script>
 </body>
 </html>

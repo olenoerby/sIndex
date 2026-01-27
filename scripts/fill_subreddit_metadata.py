@@ -60,7 +60,7 @@ def update_sub(session, s):
             try:
                 ov = data.get('over18') if 'over18' in data else data.get('over_18')
                 if ov is not None:
-                    s.over18 = bool(ov)
+                    s.is_over18 = bool(ov)
             except Exception:
                 pass
             if isinstance(payload, dict) and payload.get('reason'):

@@ -286,7 +286,9 @@ def ensure_tables():
             time.sleep(sleep_for)
 
     try:
+        logger.info(f'Creating tables: {list(models.Base.metadata.tables.keys())}')
         models.Base.metadata.create_all(engine)
+        logger.info('Schema tables created successfully')
     except Exception:
         # If DDL fails here, log and continue; caller will handle runtime errors.
         logger.exception('Failed to create tables during ensure_tables')
@@ -301,12 +303,12 @@ def ensure_tables():
     try:
         with engine.connect() as conn:
             conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_mention_sub_comment_idx ON mentions(subreddit_id, comment_id)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_mention_sub_comment_idx ON mention(subreddit_id, comment_id)"
             ))
             conn.commit()
     except Exception:
         # Non-fatal: if DB user lacks privileges or index already exists differently, continue.
-        logger.exception("Could not ensure unique index on mentions (continuing)")
+        logger.exception("Could not ensure unique index on mention (continuing)")
 
 
 def wait_for_db_startup(initial_delay: float = 10.0, max_retries: int = 5, retry_delay: float = 5.0):
@@ -758,42 +760,10 @@ def fetch_sub_about(name: str):
 def apply_schema_migrations():
     """Run small, idempotent schema migrations required by runtime code.
 
-    Currently ensures `mentions.source_subreddit_id` exists and an index
-    is present so the scanner can record where mentions were observed.
-    Also adds scan tracking columns to the analytics table.
+    NOTE: These are now handled by Alembic migrations in migrations/versions/,
+    so this function is a no-op to maintain backward compatibility.
     """
-    try:
-        with engine.begin() as conn:
-            # Add column if not present (Postgres supports IF NOT EXISTS for ADD COLUMN)
-            try:
-                conn.execute(text("ALTER TABLE mentions ADD COLUMN IF NOT EXISTS source_subreddit_id integer NULL"))
-            except Exception:
-                # Older Postgres versions or permission errors may raise; ignore
-                pass
-            # Create indexes to speed up lookups
-            try:
-                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mentions_source_subreddit_id ON mentions(source_subreddit_id)"))
-            except Exception:
-                pass
-            # Index for duplicate user mention checks (subreddit_id, user_id)
-            try:
-                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mentions_subreddit_user ON mentions(subreddit_id, user_id) WHERE user_id IS NOT NULL"))
-            except Exception:
-                pass
-            # Index for idle refresh queries (last_checked, mentions DESC)
-            try:
-                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_subreddit_idle ON subreddits(last_checked, mentions DESC)"))
-            except Exception:
-                pass
-            # Add scan tracking columns to analytics table
-            try:
-                conn.execute(text("ALTER TABLE analytics ADD COLUMN IF NOT EXISTS last_scan_started timestamp NULL"))
-                conn.execute(text("ALTER TABLE analytics ADD COLUMN IF NOT EXISTS last_scan_duration integer NULL"))
-                conn.execute(text("ALTER TABLE analytics ADD COLUMN IF NOT EXISTS last_scan_new_mentions integer NULL"))
-            except Exception:
-                pass
-    except Exception:
-        logger.exception('apply_schema_migrations failure')
+    pass
 
 
 def should_refresh_sub(sub: models.Subreddit, now: datetime = None) -> bool:
@@ -1056,7 +1026,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                 post_id=post.id,
                 body=c['body'],
                 created_utc=int(c.get('created_utc') or 0),
-                user_id=resolve_comment_user(c)
+                username=resolve_comment_user(c)
             )
             session.add(cm)
             session.commit()
@@ -1127,15 +1097,15 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             try:
                 # Combine both checks into a single query for efficiency
                 existing_mention = None
-                if cm.user_id:
+                if cm.username:
                     # Check both comment and user constraints in one query
                     existing_mention = session.query(models.Mention).filter(
                         (models.Mention.subreddit_id == sub.id) & (
-                            (models.Mention.comment_id == cm.id) | (models.Mention.user_id == cm.user_id)
+                            (models.Mention.comment_id == cm.id) | (models.Mention.user_id == cm.username)
                         )
                     ).first()
                 else:
-                    # Only check comment constraint if no user_id
+                    # Only check comment constraint if no username
                     existing_mention = session.query(models.Mention).filter_by(subreddit_id=sub.id, comment_id=cm.id).first()
                 
                 if not existing_mention:
@@ -1144,14 +1114,11 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                         comment_id=cm.id,
                         post_id=post.id,
                         timestamp=int(c.get('created_utc') or 0),
-                        user_id=cm.user_id,
-                        source_subreddit_id=(source_sub.id if source_sub else None),
-                        mentioned_text=raw_text,
-                        context_snippet=context
+                        user_id=cm.username
                     )
                     session.add(mention)
                     session.commit()
-                    logger.debug(f"Inserted mention: /r/{sname} by {cm.user_id} in comment {cm.reddit_comment_id}")
+                    logger.debug(f"Inserted mention: /r/{sname} by {cm.username} in comment {cm.reddit_comment_id}")
                     try:
                         increment_analytics(session, mentions=1)
                     except Exception:
@@ -1169,7 +1136,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             # Update stored comment body and metadata
             try:
                 cm.body = fetched_body
-                cm.user_id = resolve_comment_user(c) or cm.user_id
+                cm.username = resolve_comment_user(c) or cm.username
                 cm.created_utc = int(c.get('created_utc') or cm.created_utc or 0)
                 session.add(cm)
                 session.commit()
@@ -1222,10 +1189,10 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                 try:
                     # Combine both checks into a single query for efficiency
                     existing_mention = None
-                    if cm.user_id:
+                    if cm.username:
                         existing_mention = session.query(models.Mention).filter(
                             (models.Mention.subreddit_id == sub.id) & (
-                                (models.Mention.comment_id == cm.id) | (models.Mention.user_id == cm.user_id)
+                                (models.Mention.comment_id == cm.id) | (models.Mention.user_id == cm.username)
                             )
                         ).first()
                     else:
@@ -1237,10 +1204,7 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                             comment_id=cm.id,
                             post_id=post.id,
                             timestamp=int(c.get('created_utc') or 0),
-                            user_id=cm.user_id,
-                            source_subreddit_id=(source_sub.id if source_sub else None),
-                            mentioned_text=raw_text,
-                            context_snippet=context
+                            user_id=cm.username
                         )
                         session.add(mention)
                         session.commit()
@@ -1349,7 +1313,7 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
                 # reddit may return over18 or over_18
                 ov = data.get('over18') if 'over18' in data else data.get('over_18')
                 if ov is not None:
-                    sub.over18 = bool(ov)
+                    sub.is_over18 = bool(ov)
             except Exception:
                 pass
             sub.is_banned = sub.is_banned or False

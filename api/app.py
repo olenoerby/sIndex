@@ -234,10 +234,10 @@ def list_subreddits(
         nsfw_conditions = []
         if show_nsfw is True:
             # Include NSFW and unknown (NULL treated as potentially NSFW)
-            nsfw_conditions.append((models.Subreddit.over18 == True) | (models.Subreddit.over18 == None))
+            nsfw_conditions.append((models.Subreddit.is_over18 == True) | (models.Subreddit.is_over18 == None))
         if show_non_nsfw is True:
             # Include non-NSFW
-            nsfw_conditions.append(models.Subreddit.over18 == False)
+            nsfw_conditions.append(models.Subreddit.is_over18 == False)
         
         if nsfw_conditions:
             # At least one is enabled - combine with OR
@@ -376,7 +376,7 @@ def list_subreddits(
                 description=s.description,
                 public_description_html=getattr(s, 'public_description_html', None),
                 is_banned=s.is_banned,
-                over18=s.over18,
+                over18=s.is_over18,
                 last_checked=s.last_checked,
                 mentions=mentions
             ).dict())
@@ -580,7 +580,7 @@ def get_subreddit(name: str):
                     try:
                         ov = data.get('over18') if 'over18' in data else data.get('over_18')
                         if ov is not None:
-                            s.over18 = bool(ov)
+                            s.is_over18 = bool(ov)
                     except Exception:
                         pass
                     s.is_banned = s.is_banned or False
@@ -700,7 +700,7 @@ def stats_top_commenters(limit: int = 20, days: int = 90):
     with Session(engine) as session:
         # Prefer counting users from the `mentions` table since the scanner
         # records the author/id there when a subreddit is mentioned. Fall
-        # back to counting `comments.user_id` if no mention-based data exists.
+        # back to counting `comments.username` if no mention-based data exists.
         out = []
         try:
             mrows = session.query(
@@ -715,13 +715,13 @@ def stats_top_commenters(limit: int = 20, days: int = 90):
         except Exception:
             api_logger.exception('Failed to compute top commenters from mentions')
 
-        # Fallback: count Comment.user_id if mentions are not available
+        # Fallback: count Comment.username if mentions are not available
         try:
             crows = session.query(
-                models.Comment.user_id,
+                models.Comment.username,
                 func.count(models.Comment.id).label('comments')
-            ).filter(models.Comment.user_id != None)
-            crows = crows.group_by(models.Comment.user_id).order_by(desc('comments')).limit(limit).all()
+            ).filter(models.Comment.username != None)
+            crows = crows.group_by(models.Comment.username).order_by(desc('comments')).limit(limit).all()
             for r in crows:
                 out.append({'user_id': r[0], 'comments': int(r[1] or 0)})
         except Exception:
