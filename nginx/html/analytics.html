@@ -23,13 +23,8 @@
   <div class="page">
     <header>
       <div class="eyebrow"><a href="/" style="color: inherit; text-decoration: none;">Pineapple Index</a></div>
-      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-        <div>
-          <h1>Analytics Control Room</h1>
-          <p class="lead">A wide-angle view of all Reddit mentions we track. Explore volume over time, identify standout subreddits and posts, and keep tabs on scanner health.</p>
-        </div>
-        <button id="refreshBtn" class="btn" style="margin-top: 0; white-space: nowrap; font-family: monospace; min-width: 160px; text-align: center;">↻ Refresh (30s)</button>
-      </div>
+      <h1>Analytics Control Room</h1>
+      <p class="lead">A wide-angle view of all Reddit mentions we track. Explore volume over time, identify standout subreddits and posts, and keep tabs on scanner health.</p>
       <div class="meta">
         <span class="pill" id="lastScanned">Last DB run: —</span>
         <span class="pill" id="lastPolled">Last polled: —</span>
@@ -494,67 +489,16 @@
     bindControls();
     initializeDateRange();
     
-    // Countdown timer state
-    let countdownSeconds = 30;
-    let countdownInterval = null;
-    
-    function updateCountdownDisplay(){
-      const btn = document.getElementById('refreshBtn');
-      btn.textContent = `↻ Refresh (${countdownSeconds}s)`;
-    }
-    
-    function startCountdown(){
-      countdownSeconds = 30;
-      updateCountdownDisplay();
-      
-      if(countdownInterval) clearInterval(countdownInterval);
-      
-      countdownInterval = setInterval(() => {
-        countdownSeconds--;
-        updateCountdownDisplay();
-        
-        if(countdownSeconds <= 0){
-          countdownSeconds = 45;
-          updateCountdownDisplay();
-        }
-      }, 1000);
-    }
-    
-    async function doRefresh(){
-      await Promise.all([
-        fetchStats(),
-        fetchDaily(currentDays),
-        fetchTopBlocks()
-      ]);
-      
-      // Reset countdown
-      countdownSeconds = 30;
-      updateCountdownDisplay();
-    }
-    
-    // Manual refresh button - preserves current date range selection
-    document.getElementById('refreshBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('refreshBtn');
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
-      
-      await doRefresh();
-      
-      btn.disabled = false;
-      btn.style.opacity = '1';
-    });
-    
     // Initial load
     fetchStats();
     fetchDaily(currentDays);
     fetchTopBlocks();
-    startCountdown();
     
     // Auto-refresh every 30 seconds
     setInterval(() => { 
-      doRefresh();
-      countdownSeconds = 30;
-      updateCountdownDisplay();
+      fetchStats();
+      fetchDaily(currentDays);
+      fetchTopBlocks();
     }, 30000);
   </script>
 </body>
