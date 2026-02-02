@@ -1461,8 +1461,8 @@ def refresh_metadata_phase(duration_hours):
             else:
                 rate_limiter.wait_if_needed()
             
-            # Fetch metadata using the existing fetch_subreddit_about function
-            fetch_subreddit_about(subreddit_to_refresh, session)
+            # Fetch metadata using the existing update_subreddit_metadata function
+            update_subreddit_metadata(session, subreddit_to_refresh)
             
             # Record the API call
             if distributed_rate_limiter:
@@ -1483,12 +1483,77 @@ def refresh_metadata_phase(duration_hours):
     logger.info(f"=== Metadata Refresh Phase Complete: {refreshed_count} subreddits refreshed in {elapsed/3600:.2f} hours ===")
 
 
+def check_scan_subreddits_availability():
+    """Check that all subreddits in scan configuration are available (not banned/not found).
+    Updates metadata for scan subreddits if they don't exist in database yet.
+    """
+    logger.info("Checking availability of scan configuration subreddits...")
+    
+    with Session(engine) as session:
+        scan_configs, _, _ = load_scan_config_from_db(session)
+        
+        if not scan_configs:
+            logger.warning("No scan configuration found. Skipping availability check.")
+            return
+        
+        unavailable = []
+        
+        for subname in scan_configs.keys():
+            # Get or create subreddit record
+            sub = session.query(models.Subreddit).filter(
+                func.lower(models.Subreddit.name) == subname.lower()
+            ).first()
+            
+            if not sub:
+                # Create new subreddit record
+                logger.info(f"Scan subreddit /r/{subname} not in database, creating and fetching metadata...")
+                sub = models.Subreddit(name=subname.lower())
+                session.add(sub)
+                session.flush()
+            
+            # Check if we need to fetch/update metadata
+            if sub.title is None or sub.subreddit_found is None:
+                logger.info(f"Fetching metadata for scan subreddit /r/{subname}...")
+                if distributed_rate_limiter:
+                    distributed_rate_limiter.wait_if_needed()
+                else:
+                    rate_limiter.wait_if_needed()
+                
+                update_subreddit_metadata(session, sub)
+                
+                if distributed_rate_limiter:
+                    distributed_rate_limiter.record_api_call()
+                else:
+                    rate_limiter.record_call()
+                
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    logger.exception(f"Failed to commit metadata for /r/{subname}")
+            
+            # Check availability
+            if sub.is_banned or sub.subreddit_found == False:
+                status = "banned" if sub.is_banned else "not found"
+                unavailable.append(f"/r/{subname} ({status})")
+                logger.warning(f"Scan subreddit /r/{subname} is {status}!")
+        
+        if unavailable:
+            logger.error(f"WARNING: {len(unavailable)} scan subreddit(s) are unavailable: {', '.join(unavailable)}")
+            logger.error("Scanner will continue but may not discover new mentions from these subreddits.")
+        else:
+            logger.info(f"All {len(scan_configs)} scan subreddits are available.")
+
+
 def main_loop():
     logger.info("main_loop() called")
     wait_for_db_startup()
     logger.info("wait_for_db_startup() complete")
     ensure_tables()
     logger.info("ensure_tables() complete")
+    
+    # Check that all scan configuration subreddits are available
+    check_scan_subreddits_availability()
     
     # Optionally start with metadata refresh before scanning
     if SCAN_FOR_METADATA_FIRST:
@@ -1589,7 +1654,7 @@ def main_loop():
                                     distributed_rate_limiter.wait_if_needed()
                                 else:
                                     rate_limiter.wait_if_needed()
-                                fetch_subreddit_about(sub, meta_session)
+                                update_subreddit_metadata(meta_session, sub)
                                 if distributed_rate_limiter:
                                     distributed_rate_limiter.record_api_call()
                                 else:
