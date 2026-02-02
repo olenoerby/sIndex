@@ -103,13 +103,6 @@ body {
   font-size: 18px;
 }
 
-.nav-icon svg {
-  width: 20px;
-  height: 20px;
-  fill: currentColor;
-  vertical-align: middle;
-}
-
 .nav-text {
   display: inline;
 }
@@ -130,6 +123,7 @@ body {
 
   .nav-icon {
     display: inline;
+    font-size: 20px;
   }
 
   .nav-text {
