@@ -873,10 +873,20 @@ def get_subreddit(name: str):
 
 
     @app.post("/subreddits/{name}/refresh")
-    def refresh_subreddit(name: str):
+    def refresh_subreddit(name: str, api_key: Optional[str] = Query(None)):
         """Fetch Reddit about.json for a single subreddit, create the DB row if missing,
         update stored metadata, and return the updated subreddit record.
+        
+        Requires API key authentication when API_KEY is set in environment.
         """
+        # API key check
+        ENV_API_KEY = os.getenv('API_KEY')
+        provided_key = api_key or os.getenv('HTTP_X_API_KEY') or ''
+        
+        if ENV_API_KEY:
+            if not provided_key or provided_key != ENV_API_KEY:
+                raise HTTPException(status_code=403, detail='Invalid or missing API key')
+        
         lname = name.lower().strip()
         with Session(engine) as session:
             s = session.query(models.Subreddit).filter(models.Subreddit.name == lname).first()
