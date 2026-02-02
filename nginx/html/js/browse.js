@@ -10,6 +10,37 @@ let currentFilter = 'nsfw';
 let searchQuery = '';
 let isLoading = false;
 
+// Save preferences to cookie
+function savePrefs() {
+  try {
+    const prefs = {
+      currentSort,
+      previousSort,
+      currentFilter,
+      searchQuery,
+      currentPage,
+      perPage
+    };
+    setCookie('sindex_browse_prefs', encodeURIComponent(JSON.stringify(prefs)), 365);
+  } catch(e) { /* ignore */ }
+}
+
+// Load preferences from cookie
+function loadPrefs() {
+  try {
+    const cookie = getCookie('sindex_browse_prefs');
+    if (!cookie) return;
+    const prefs = JSON.parse(decodeURIComponent(cookie));
+    
+    if (prefs.currentSort) currentSort = prefs.currentSort;
+    if (prefs.previousSort) previousSort = prefs.previousSort;
+    if (prefs.currentFilter) currentFilter = prefs.currentFilter;
+    if (prefs.searchQuery) searchQuery = prefs.searchQuery;
+    if (prefs.currentPage) currentPage = Number(prefs.currentPage) || 1;
+    if (prefs.perPage) perPage = Number(prefs.perPage) || 24;
+  } catch(e) { /* ignore malformed cookie */ }
+}
+
 // DOM elements
 const searchInput = document.getElementById('searchInput');
 const searchClear = document.getElementById('searchClear');
@@ -168,6 +199,7 @@ async function loadSubreddits() {
     subredditGrid.style.display = 'none';
   } finally {
     isLoading = false;
+    savePrefs();
   }
 }
 
@@ -178,6 +210,7 @@ function updatePagination() {
   prevPage.disabled = currentPage <= 1;
   nextPage.disabled = currentPage >= totalPages;
   pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  savePrefs();
 }
 
 // Update header count from database total
@@ -271,5 +304,30 @@ nextPage.addEventListener('click', () => {
   }
 });
 
+// Initialize preferences and UI on page load
+function initializePage() {
+  // Load saved preferences
+  loadPrefs();
+  
+  // Apply preferences to UI
+  if (sortBy) sortBy.value = currentSort;
+  if (searchInput) {
+    searchInput.value = searchQuery;
+    searchClear.style.display = searchQuery ? 'block' : 'none';
+  }
+  
+  // Set active filter chip
+  filterChips.forEach(chip => {
+    if (chip.dataset.filter === currentFilter) {
+      chip.classList.add('active');
+    } else {
+      chip.classList.remove('active');
+    }
+  });
+  
+  // Load data
+  loadSubreddits();
+}
+
 // Initial load with age gate
-initWithAgeGate(() => loadSubreddits());
+initWithAgeGate(() => initializePage());
