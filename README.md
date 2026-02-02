@@ -44,6 +44,8 @@ Basic settings in `.env`:
 - `DATABASE_URL` (Postgres DSN)
 - `API_RATE_DELAY` (delay between Reddit API calls, default 7s)
 - `HTTP_REQUEST_TIMEOUT`, `SUBABOUT_CONCURRENCY`, etc.
+- `POST_COMMENT_LOOKBACK_DAYS` (how many days back to rescan posts for new/edited comments; 0 = skip rescanning, empty = scan all)
+- `SKIP_RECENTLY_SCANNED_HOURS` (skip posts scanned within X hours; useful for container restarts; 0 = disabled, default: 0)
 
 **Scan configuration is now database-driven** (no .env editing needed):
 - Use the `subreddit_scan_configs`, `ignored_subreddits`, and `ignored_users` tables

@@ -14,6 +14,8 @@ class Post(Base):
     # count of distinct subreddits mentioned in this post's comments
     unique_subreddits = Column(Integer, nullable=False, default=0)
     url = Column(Text)
+    # timestamp when this post was last scanned for comments
+    last_scanned = Column(DateTime, nullable=True)
     comments = relationship('Comment', back_populates='post')
 
 

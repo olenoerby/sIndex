@@ -64,6 +64,17 @@ if post_lookback_env:
         POST_COMMENT_LOOKBACK_DAYS = None
 else:
     POST_COMMENT_LOOKBACK_DAYS = None
+
+# Skip posts that were scanned within the last X hours (useful for container restarts)
+# Set to 0 to disable this feature and always scan posts.
+skip_recently_scanned_env = os.getenv('SKIP_RECENTLY_SCANNED_HOURS', '').strip()
+if skip_recently_scanned_env:
+    try:
+        SKIP_RECENTLY_SCANNED_HOURS = int(skip_recently_scanned_env)
+    except Exception:
+        SKIP_RECENTLY_SCANNED_HOURS = 0
+else:
+    SKIP_RECENTLY_SCANNED_HOURS = 0
 # Number of days to consider subreddit metadata fresh before re-fetching from Reddit.
 # Can be set via `SUBREDDIT_META_CACHE_DAYS`; falls back to legacy `META_CACHE_DAYS` if present.
 # Max retries for subreddit about fetches and per-request HTTP timeout (seconds)
@@ -920,6 +931,15 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
     existing = session.query(models.Post).filter_by(reddit_post_id=reddit_id).first()
     now = datetime.utcnow()
     
+    # Skip posts that were recently scanned (helps avoid reprocessing on container restart)
+    if existing and SKIP_RECENTLY_SCANNED_HOURS > 0:
+        if hasattr(existing, 'last_scanned') and existing.last_scanned:
+            time_since_scan = now - existing.last_scanned
+            if time_since_scan < timedelta(hours=SKIP_RECENTLY_SCANNED_HOURS):
+                hours_ago = time_since_scan.total_seconds() / 3600
+                logger.debug(f"Post {reddit_id} was scanned {hours_ago:.1f}h ago (within {SKIP_RECENTLY_SCANNED_HOURS}h window), skipping")
+                return (True, set())
+    
     if existing and POST_COMMENT_LOOKBACK_DAYS is not None:
         # Only skip re-scanning if post exists AND lookback is configured
         six_months_ago_ts = int((now - timedelta(days=POST_COMMENT_LOOKBACK_DAYS)).timestamp())
@@ -988,7 +1008,9 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                 # On any comparison error, conservatively treat as unedited
                 pass
 
-    # If there are no new or edited comments, skip this post entirely
+    # If theif hasattr(post, 'last_scanned'):
+                post.last_scanned = now
+            re are no new or edited comments, skip this post entirely
     if not missing and not edited and existing:
         logger.info(f"All comments for post {reddit_id} already scanned and unchanged, skipping post")
         return (True, set())
@@ -1238,6 +1260,9 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                 pass
         try:
             post.unique_subreddits = uniq
+            # Update last_scanned timestamp to track when this post was last processed
+            if hasattr(post, 'last_scanned'):
+                post.last_scanned = now
             session.add(post)
             session.commit()
             logger.info(f"Updated post {reddit_id} unique_subreddits={uniq}")
