@@ -1105,4 +1105,158 @@ def stats_daily(days: int = 90):
         return { 'items': items }
 
 
+@app.get("/discover/trending")
+@cache_response(ttl_seconds=300)  # Cache for 5 minutes
+async def get_trending(days: int = Query(default=7, ge=1, le=90)):
+    """Get subreddits trending in the last N days (most mentions recently)"""
+    with Session(engine) as session:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        
+        # Count mentions per subreddit in the time window
+        stmt = (
+            select(
+                models.Mention.subreddit_id,
+                func.count(models.Mention.id).label('recent_mentions')
+            )
+            .where(models.Mention.created_at >= cutoff)
+            .group_by(models.Mention.subreddit_id)
+            .order_by(desc('recent_mentions'))
+            .limit(50)
+        )
+        
+        results = session.execute(stmt).all()
+        items = []
+        
+        for sub_id, count in results:
+            sub = session.get(models.Subreddit, sub_id)
+            if sub and sub.subreddit_found and not sub.is_banned:
+                total_mentions = session.query(func.count(models.Mention.id)).filter(
+                    models.Mention.subreddit_id == sub_id
+                ).scalar()
+                items.append({
+                    'name': sub.name,
+                    'display_name_prefixed': sub.display_name_prefixed,
+                    'title': sub.title,
+                    'subscribers': sub.subscribers,
+                    'recent_mentions': int(count),
+                    'total_mentions': int(total_mentions or 0),
+                    'is_over18': sub.is_over18
+                })
+        
+        return {'days': days, 'items': items}
+
+
+@app.get("/discover/hidden_gems")
+@cache_response(ttl_seconds=300)
+async def get_hidden_gems(max_subscribers: int = Query(default=10000, ge=100, le=100000)):
+    """Find active subreddits with low subscriber counts (hidden gems)"""
+    with Session(engine) as session:
+        # Find subs with mentions but low subscribers
+        stmt = (
+            select(
+                models.Subreddit,
+                func.count(models.Mention.id).label('mentions')
+            )
+            .join(models.Mention, models.Mention.subreddit_id == models.Subreddit.id)
+            .where(
+                models.Subreddit.subreddit_found == True,
+                models.Subreddit.is_banned == False,
+                models.Subreddit.subscribers != None,
+                models.Subreddit.subscribers < max_subscribers,
+                models.Subreddit.subscribers > 0
+            )
+            .group_by(models.Subreddit.id)
+            .having(func.count(models.Mention.id) >= 3)  # At least 3 mentions
+            .order_by(desc('mentions'))
+            .limit(50)
+        )
+        
+        results = session.execute(stmt).all()
+        items = []
+        
+        for sub, mentions in results:
+            items.append({
+                'name': sub.name,
+                'display_name_prefixed': sub.display_name_prefixed,
+                'title': sub.title,
+                'subscribers': sub.subscribers,
+                'mentions': int(mentions),
+                'is_over18': sub.is_over18
+            })
+        
+        return {'max_subscribers': max_subscribers, 'items': items}
+
+
+@app.get("/discover/fastest_growing")
+@cache_response(ttl_seconds=300)
+async def get_fastest_growing(days: int = Query(default=30, ge=7, le=90)):
+    """Find subreddits with the biggest increase in mentions recently"""
+    with Session(engine) as session:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        
+        # Get recent vs older mention counts for each subreddit
+        recent_counts = (
+            select(
+                models.Mention.subreddit_id,
+                func.count(models.Mention.id).label('recent')
+            )
+            .where(models.Mention.created_at >= cutoff)
+            .group_by(models.Mention.subreddit_id)
+            .subquery()
+        )
+        
+        older_counts = (
+            select(
+                models.Mention.subreddit_id,
+                func.count(models.Mention.id).label('older')
+            )
+            .where(models.Mention.created_at < cutoff)
+            .group_by(models.Mention.subreddit_id)
+            .subquery()
+        )
+        
+        # Calculate growth ratio
+        stmt = (
+            select(
+                models.Subreddit,
+                func.coalesce(recent_counts.c.recent, 0).label('recent_mentions'),
+                func.coalesce(older_counts.c.older, 1).label('older_mentions')
+            )
+            .outerjoin(recent_counts, models.Subreddit.id == recent_counts.c.subreddit_id)
+            .outerjoin(older_counts, models.Subreddit.id == older_counts.c.subreddit_id)
+            .where(
+                models.Subreddit.subreddit_found == True,
+                models.Subreddit.is_banned == False,
+                recent_counts.c.recent >= 5  # At least 5 recent mentions
+            )
+        )
+        
+        results = session.execute(stmt).all()
+        
+        # Calculate growth and sort
+        growth_data = []
+        for sub, recent, older in results:
+            growth_ratio = recent / max(older, 1)
+            if growth_ratio > 1.5:  # At least 50% growth
+                total = session.query(func.count(models.Mention.id)).filter(
+                    models.Mention.subreddit_id == sub.id
+                ).scalar()
+                growth_data.append({
+                    'name': sub.name,
+                    'display_name_prefixed': sub.display_name_prefixed,
+                    'title': sub.title,
+                    'subscribers': sub.subscribers,
+                    'recent_mentions': int(recent),
+                    'older_mentions': int(older),
+                    'growth_ratio': round(growth_ratio, 2),
+                    'total_mentions': int(total or 0),
+                    'is_over18': sub.is_over18
+                })
+        
+        # Sort by growth ratio
+        growth_data.sort(key=lambda x: x['growth_ratio'], reverse=True)
+        
+        return {'days': days, 'items': growth_data[:50]}
+
+
 # Removed endpoint: GET /subreddits/count — use GET /stats for aggregated counts instead.

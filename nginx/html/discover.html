@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Discover — Pineapple Subreddit Index</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="/fruit-pineapple.svg" type="image/svg+xml">
+  <link rel="shortcut icon" href="/fruit-pineapple.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-X5E2L44KYG"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-X5E2L44KYG');
+  </script>
+  <style>
+    .discover-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 22px 60px;
+    }
+    
+    .section {
+      margin-bottom: 48px;
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .section-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+    }
+    
+    .section-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 4px;
+    }
+    
+    .time-selector {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .time-btn {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    
+    .time-btn:hover {
+      background: var(--panel-strong);
+    }
+    
+    .time-btn.active {
+      background: linear-gradient(120deg, rgba(30,198,179,0.3), rgba(30,198,179,0.1));
+      border-color: rgba(30,198,179,0.4);
+      color: #e9fffb;
+    }
+    
+    .subreddit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    
+    .subreddit-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      transition: all 0.2s;
+      position: relative;
+    }
+    
+    .subreddit-card:hover {
+      background: rgba(255,255,255,0.05);
+      border-color: rgba(30,198,179,0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    
+    .subreddit-name {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    
+    .subreddit-name a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    
+    .subreddit-name a:hover {
+      text-decoration: underline;
+    }
+    
+    .subreddit-title {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+      min-height: 36px;
+    }
+    
+    .subreddit-stats {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+    }
+    
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--muted);
+    }
+    
+    .stat-value {
+      color: var(--text);
+      font-weight: 600;
+    }
+    
+    .badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: linear-gradient(135deg, rgba(249,115,22,0.3), rgba(249,115,22,0.1));
+      border: 1px solid rgba(249,115,22,0.4);
+      color: #ffc8a3;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .badge.growth {
+      background: linear-gradient(135deg, rgba(30,198,179,0.3), rgba(30,198,179,0.1));
+      border-color: rgba(30,198,179,0.4);
+      color: #a3ffe9;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--muted);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+    
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <nav class="main-nav">
+    <a href="/" class="nav-link">Browse</a>
+    <a href="/discover.html" class="nav-link active">Discover</a>
+    <a href="/analytics.html" class="nav-link">Analytics</a>
+  </nav>
+
+  <div class="discover-container">
+    <h1>Discover Subreddits</h1>
+    <p class="lead">Find trending communities, hidden gems, and the fastest growing subreddits in our index.</p>
+
+    <!-- Trending This Week -->
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">🔥 Trending</h2>
+          <p class="section-subtitle">Most mentioned recently</p>
+        </div>
+        <div class="time-selector">
+          <button class="time-btn active" data-section="trending" data-days="7">7d</button>
+          <button class="time-btn" data-section="trending" data-days="14">14d</button>
+          <button class="time-btn" data-section="trending" data-days="30">30d</button>
+        </div>
+      </div>
+      <div id="trending-list" class="subreddit-grid">
+        <div class="loading">Loading trending subreddits...</div>
+      </div>
+    </div>
+
+    <!-- Hidden Gems -->
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">💎 Hidden Gems</h2>
+          <p class="section-subtitle">Active communities with smaller audiences</p>
+        </div>
+        <div class="time-selector">
+          <button class="time-btn" data-section="gems" data-max="5000">< 5K</button>
+          <button class="time-btn active" data-section="gems" data-max="10000">< 10K</button>
+          <button class="time-btn" data-section="gems" data-max="25000">< 25K</button>
+        </div>
+      </div>
+      <div id="gems-list" class="subreddit-grid">
+        <div class="loading">Loading hidden gems...</div>
+      </div>
+    </div>
+
+    <!-- Fastest Growing -->
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">📈 Fastest Growing</h2>
+          <p class="section-subtitle">Biggest increase in mentions</p>
+        </div>
+        <div class="time-selector">
+          <button class="time-btn" data-section="growing" data-days="14">14d</button>
+          <button class="time-btn active" data-section="growing" data-days="30">30d</button>
+          <button class="time-btn" data-section="growing" data-days="60">60d</button>
+        </div>
+      </div>
+      <div id="growing-list" class="subreddit-grid">
+        <div class="loading">Loading fastest growing...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentData = {
+      trending: { days: 7, data: null },
+      gems: { max_subscribers: 10000, data: null },
+      growing: { days: 30, data: null }
+    };
+
+    // Format numbers with K/M suffix
+    function formatNumber(num) {
+      if (!num) return '0';
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return num.toString();
+    }
+
+    // Create subreddit card HTML
+    function createSubredditCard(sub, type = 'default') {
+      const badge = type === 'trending' ? `<span class="badge">Hot</span>` :
+                    type === 'growing' ? `<span class="badge growth">+${sub.growth_ratio}x</span>` : '';
+      
+      const title = sub.title ? `<div class="subreddit-title">${escapeHtml(sub.title)}</div>` : '';
+      
+      let stats = [];
+      if (sub.recent_mentions) {
+        stats.push(`<span class="stat"><span class="stat-value">${formatNumber(sub.recent_mentions)}</span> recent</span>`);
+      }
+      if (sub.mentions) {
+        stats.push(`<span class="stat"><span class="stat-value">${formatNumber(sub.mentions)}</span> mentions</span>`);
+      }
+      if (sub.total_mentions) {
+        stats.push(`<span class="stat"><span class="stat-value">${formatNumber(sub.total_mentions)}</span> total</span>`);
+      }
+      if (sub.subscribers) {
+        stats.push(`<span class="stat"><span class="stat-value">${formatNumber(sub.subscribers)}</span> subs</span>`);
+      }
+      
+      return `
+        <div class="subreddit-card">
+          ${badge}
+          <div class="subreddit-name">
+            <a href="https://reddit.com/${sub.display_name_prefixed || 'r/' + sub.name}" target="_blank" rel="noopener noreferrer">
+              ${escapeHtml(sub.display_name_prefixed || 'r/' + sub.name)}
+            </a>
+          </div>
+          ${title}
+          <div class="subreddit-stats">
+            ${stats.join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // Load data functions
+    async function loadTrending(days = 7) {
+      const container = document.getElementById('trending-list');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      
+      try {
+        const response = await fetch(`/api/discover/trending?days=${days}`);
+        const data = await response.json();
+        currentData.trending = { days, data };
+        
+        if (data.items && data.items.length > 0) {
+          container.innerHTML = data.items.slice(0, 12).map(sub => createSubredditCard(sub, 'trending')).join('');
+        } else {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>No trending subreddits found</p></div>';
+        }
+      } catch (error) {
+        console.error('Error loading trending:', error);
+        container.innerHTML = '<div class="empty-state"><p>Error loading data</p></div>';
+      }
+    }
+
+    async function loadHiddenGems(maxSubs = 10000) {
+      const container = document.getElementById('gems-list');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      
+      try {
+        const response = await fetch(`/api/discover/hidden_gems?max_subscribers=${maxSubs}`);
+        const data = await response.json();
+        currentData.gems = { max_subscribers: maxSubs, data };
+        
+        if (data.items && data.items.length > 0) {
+          container.innerHTML = data.items.slice(0, 12).map(sub => createSubredditCard(sub, 'gem')).join('');
+        } else {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💎</div><p>No hidden gems found</p></div>';
+        }
+      } catch (error) {
+        console.error('Error loading gems:', error);
+        container.innerHTML = '<div class="empty-state"><p>Error loading data</p></div>';
+      }
+    }
+
+    async function loadFastestGrowing(days = 30) {
+      const container = document.getElementById('growing-list');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+      
+      try {
+        const response = await fetch(`/api/discover/fastest_growing?days=${days}`);
+        const data = await response.json();
+        currentData.growing = { days, data };
+        
+        if (data.items && data.items.length > 0) {
+          container.innerHTML = data.items.slice(0, 12).map(sub => createSubredditCard(sub, 'growing')).join('');
+        } else {
+          container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📈</div><p>No growing subreddits found</p></div>';
+        }
+      } catch (error) {
+        console.error('Error loading growing:', error);
+        container.innerHTML = '<div class="empty-state"><p>Error loading data</p></div>';
+      }
+    }
+
+    // Button handlers
+    document.querySelectorAll('.time-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const section = this.dataset.section;
+        const days = this.dataset.days;
+        const maxSubs = this.dataset.max;
+        
+        // Update active state
+        this.parentElement.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        // Load data
+        if (section === 'trending' && days) {
+          loadTrending(parseInt(days));
+        } else if (section === 'gems' && maxSubs) {
+          loadHiddenGems(parseInt(maxSubs));
+        } else if (section === 'growing' && days) {
+          loadFastestGrowing(parseInt(days));
+        }
+      });
+    });
+
+    // Initial load
+    loadTrending(7);
+    loadHiddenGems(10000);
+    loadFastestGrowing(30);
+  </script>
+</body>
+</html>
