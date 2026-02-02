@@ -344,6 +344,8 @@ def list_subreddits(
     show_nsfw: Optional[bool] = None,
     show_non_nsfw: Optional[bool] = None,
     first_mentioned_days: Optional[int] = None,
+    tags: Optional[str] = None,
+    tag_mode: str = 'any',
 ):
     # enforce sensible limits to avoid huge responses
     max_per = 500
@@ -375,6 +377,40 @@ def list_subreddits(
         subq = session.query(models.Subreddit, func.count(models.Mention.id).label('mentions'))\
             .join(models.Mention, models.Mention.subreddit_id == models.Subreddit.id, isouter=True)\
             .group_by(models.Subreddit.id)
+
+        # Apply category tag filters if provided
+        if tags:
+            try:
+                tag_ids = [int(tid.strip()) for tid in tags.split(',') if tid.strip()]
+                if tag_ids:
+                    if tag_mode == 'all':
+                        # AND mode: subreddit must have ALL specified tags
+                        tag_count_subq = session.query(
+                            models.SubredditCategoryTag.subreddit_id,
+                            func.count(models.SubredditCategoryTag.id).label('tag_count')
+                        ).filter(
+                            models.SubredditCategoryTag.category_tag_id.in_(tag_ids)
+                        ).group_by(
+                            models.SubredditCategoryTag.subreddit_id
+                        ).having(
+                            func.count(models.SubredditCategoryTag.id) == len(tag_ids)
+                        ).subquery()
+                        
+                        subq = subq.join(
+                            tag_count_subq,
+                            tag_count_subq.c.subreddit_id == models.Subreddit.id
+                        )
+                    else:
+                        # OR mode (default): subreddit must have ANY of the specified tags
+                        subq = subq.join(
+                            models.SubredditCategoryTag,
+                            models.SubredditCategoryTag.subreddit_id == models.Subreddit.id
+                        ).filter(
+                            models.SubredditCategoryTag.category_tag_id.in_(tag_ids)
+                        )
+            except ValueError:
+                # Invalid tag IDs provided, ignore filter
+                pass
 
         # Apply text search filter if provided
         if q:
@@ -1257,3 +1293,252 @@ async def get_fastest_growing(days: int = Query(default=30, ge=7, le=90)):
 
 
 # Removed endpoint: GET /subreddits/count — use GET /stats for aggregated counts instead.
+
+
+# ===== Category System Endpoints =====
+
+@app.get("/api/categories")
+def list_categories(include_tags: bool = True, active_only: bool = True):
+    """List all categories, optionally including their tags."""
+    with Session(engine) as session:
+        query = session.query(models.Category)
+        
+        if active_only:
+            query = query.filter(models.Category.active == True)
+        
+        query = query.order_by(models.Category.sort_order, models.Category.name)
+        categories = query.all()
+        
+        result = []
+        for cat in categories:
+            cat_data = {
+                'id': cat.id,
+                'name': cat.name,
+                'slug': cat.slug,
+                'description': cat.description,
+                'sort_order': cat.sort_order,
+                'icon': cat.icon,
+                'active': cat.active
+            }
+            
+            if include_tags:
+                tag_query = session.query(models.CategoryTag).filter(
+                    models.CategoryTag.category_id == cat.id
+                )
+                if active_only:
+                    tag_query = tag_query.filter(models.CategoryTag.active == True)
+                
+                tag_query = tag_query.order_by(models.CategoryTag.sort_order, models.CategoryTag.name)
+                tags = tag_query.all()
+                
+                cat_data['tags'] = [{
+                    'id': tag.id,
+                    'name': tag.name,
+                    'slug': tag.slug,
+                    'keywords': tag.keywords,
+                    'description': tag.description,
+                    'sort_order': tag.sort_order,
+                    'icon': tag.icon,
+                    'active': tag.active,
+                    'subreddit_count': session.query(func.count(models.SubredditCategoryTag.id)).filter(
+                        models.SubredditCategoryTag.category_tag_id == tag.id
+                    ).scalar() or 0
+                } for tag in tags]
+            
+            result.append(cat_data)
+        
+        return result
+
+
+@app.get("/api/categories/{category_slug}")
+def get_category(category_slug: str, include_tags: bool = True):
+    """Get a single category by slug."""
+    with Session(engine) as session:
+        category = session.query(models.Category).filter(
+            models.Category.slug == category_slug
+        ).first()
+        
+        if not category:
+            raise HTTPException(status_code=404, detail="Category not found")
+        
+        cat_data = {
+            'id': category.id,
+            'name': category.name,
+            'slug': category.slug,
+            'description': category.description,
+            'sort_order': category.sort_order,
+            'icon': category.icon,
+            'active': category.active
+        }
+        
+        if include_tags:
+            tags = session.query(models.CategoryTag).filter(
+                models.CategoryTag.category_id == category.id,
+                models.CategoryTag.active == True
+            ).order_by(models.CategoryTag.sort_order, models.CategoryTag.name).all()
+            
+            cat_data['tags'] = [{
+                'id': tag.id,
+                'name': tag.name,
+                'slug': tag.slug,
+                'keywords': tag.keywords,
+                'description': tag.description,
+                'sort_order': tag.sort_order,
+                'icon': tag.icon,
+                'active': tag.active,
+                'subreddit_count': session.query(func.count(models.SubredditCategoryTag.id)).filter(
+                    models.SubredditCategoryTag.category_tag_id == tag.id
+                ).scalar() or 0
+            } for tag in tags]
+        
+        return cat_data
+
+
+@app.get("/api/tags/{tag_id}/subreddits")
+def get_tag_subreddits(
+    tag_id: int,
+    page: int = 1,
+    per_page: int = 50,
+    sort: str = 'mentions',
+    sort_dir: str = 'desc'
+):
+    """Get all subreddits tagged with a specific tag."""
+    per_page = min(500, max(1, int(per_page)))
+    page = max(1, int(page))
+    offset = (page - 1) * per_page
+    
+    allowed_sorts = {'mentions', 'subscribers', 'name', 'created_utc', 'first_mentioned'}
+    if sort not in allowed_sorts:
+        sort = 'mentions'
+    
+    with Session(engine) as session:
+        tag = session.query(models.CategoryTag).filter(models.CategoryTag.id == tag_id).first()
+        if not tag:
+            raise HTTPException(status_code=404, detail="Tag not found")
+        
+        total = session.query(func.count(models.SubredditCategoryTag.id)).filter(
+            models.SubredditCategoryTag.category_tag_id == tag_id
+        ).scalar() or 0
+        
+        subq = session.query(
+            models.Subreddit,
+            func.count(models.Mention.id).label('mentions')
+        ).join(
+            models.SubredditCategoryTag,
+            models.SubredditCategoryTag.subreddit_id == models.Subreddit.id
+        ).join(
+            models.Mention,
+            models.Mention.subreddit_id == models.Subreddit.id,
+            isouter=True
+        ).filter(
+            models.SubredditCategoryTag.category_tag_id == tag_id
+        ).group_by(models.Subreddit.id)
+        
+        if sort == 'mentions':
+            subq = subq.order_by(desc('mentions') if sort_dir == 'desc' else 'mentions')
+        elif sort == 'subscribers':
+            subq = subq.order_by(
+                desc(models.Subreddit.subscribers) if sort_dir == 'desc' else models.Subreddit.subscribers
+            )
+        elif sort == 'name':
+            subq = subq.order_by(
+                desc(models.Subreddit.name) if sort_dir == 'desc' else models.Subreddit.name
+            )
+        elif sort == 'created_utc':
+            subq = subq.order_by(
+                desc(models.Subreddit.created_utc) if sort_dir == 'desc' else models.Subreddit.created_utc
+            )
+        elif sort == 'first_mentioned':
+            subq = subq.order_by(
+                desc(models.Subreddit.first_mentioned) if sort_dir == 'desc' else models.Subreddit.first_mentioned
+            )
+        
+        results = subq.limit(per_page).offset(offset).all()
+        
+        items = [{
+            'id': sub.id,
+            'name': sub.name,
+            'title': sub.title,
+            'display_name': sub.display_name,
+            'description': sub.description,
+            'subscribers': sub.subscribers,
+            'active_users': sub.active_users,
+            'created_utc': sub.created_utc,
+            'first_mentioned': sub.first_mentioned,
+            'is_over18': sub.is_over18,
+            'is_banned': sub.is_banned,
+            'subreddit_found': sub.subreddit_found,
+            'mentions': mentions
+        } for sub, mentions in results]
+        
+        return {
+            'tag': {
+                'id': tag.id,
+                'name': tag.name,
+                'slug': tag.slug,
+                'category_name': tag.category.name if tag.category else None
+            },
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'items': items
+        }
+
+
+@app.get("/api/subreddits/{name}/categories")
+def get_subreddit_categories(name: str):
+    """Get all category tags applied to a subreddit."""
+    with Session(engine) as session:
+        subreddit = session.query(models.Subreddit).filter(
+            models.Subreddit.name == name
+        ).first()
+        
+        if not subreddit:
+            raise HTTPException(status_code=404, detail="Subreddit not found")
+        
+        tags_query = session.query(
+            models.CategoryTag,
+            models.Category,
+            models.SubredditCategoryTag
+        ).join(
+            models.SubredditCategoryTag,
+            models.SubredditCategoryTag.category_tag_id == models.CategoryTag.id
+        ).join(
+            models.Category,
+            models.Category.id == models.CategoryTag.category_id
+        ).filter(
+            models.SubredditCategoryTag.subreddit_id == subreddit.id
+        ).order_by(
+            models.Category.sort_order,
+            models.CategoryTag.sort_order
+        ).all()
+        
+        categories = {}
+        for tag, category, association in tags_query:
+            if category.id not in categories:
+                categories[category.id] = {
+                    'id': category.id,
+                    'name': category.name,
+                    'slug': category.slug,
+                    'icon': category.icon,
+                    'tags': []
+                }
+            
+            categories[category.id]['tags'].append({
+                'id': tag.id,
+                'name': tag.name,
+                'slug': tag.slug,
+                'icon': tag.icon,
+                'source': association.source,
+                'confidence': association.confidence,
+                'created_at': association.created_at.isoformat() if association.created_at else None
+            })
+        
+        return {
+            'subreddit': {
+                'id': subreddit.id,
+                'name': subreddit.name,
+                'title': subreddit.title
+            },
+            'categories': list(categories.values())
+        }

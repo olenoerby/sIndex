@@ -948,19 +948,24 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
 
     # If there are no comments at all, create the post record and move on
     if not found:
-        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
-        session.add(post)
-        session.commit()
+        if not existing:
+            try:
+                post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
+                session.add(post)
+                session.commit()
+                try:
+                    increment_analytics(session, posts=1)
+                except Exception:
+                    logger.debug('Failed to increment analytics for post')
+            except Exception as e:
+                session.rollback()
+                logger.debug(f"Post {reddit_id} already exists or insert failed: {e}")
         try:
             date_str = datetime.utcfromtimestamp(created_utc).strftime('%Y-%m-%d') if created_utc else 'unknown-date'
         except Exception:
             date_str = 'unknown-date'
         source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
-        logger.info(f"Saved post {reddit_id} ({date_str}) (no comments found){source_sub_str}")
-        try:
-            increment_analytics(session, posts=1)
-        except Exception:
-            logger.debug('Failed to increment analytics for post')
+        logger.info(f"Post {reddit_id} ({date_str}) (no comments found){source_sub_str}")
         return (True, set())
 
     # Determine which comments are new or have changed since last scan.
@@ -989,15 +994,21 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
 
     # Ensure a Post row exists (create if missing)
     if not existing:
-        post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
-        session.add(post)
-        session.commit()
         try:
-            increment_analytics(session, posts=1)
-        except Exception:
-            logger.debug('Failed to increment analytics for post')
-        source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
-        logger.info(f"Saved post {reddit_id} ({format_ts(created_utc)}) - processing {len(missing)} new comments{source_sub_str}")
+            post = models.Post(reddit_post_id=reddit_id, title=title, created_utc=created_utc, url=url)
+            session.add(post)
+            session.commit()
+            try:
+                increment_analytics(session, posts=1)
+            except Exception:
+                logger.debug('Failed to increment analytics for post')
+            source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
+            logger.info(f"Saved post {reddit_id} ({format_ts(created_utc)}) - processing {len(missing)} new comments{source_sub_str}")
+        except Exception as e:
+            session.rollback()
+            logger.debug(f"Post {reddit_id} already exists or insert failed: {e}")
+            source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
+            logger.info(f"Processing post {reddit_id} ({format_ts(created_utc)}) - {len(missing)} new comments{source_sub_str}")
     else:
         post = existing
         source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
@@ -1414,16 +1425,16 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
 # metadata_worker removed: metadata is fetched synchronously during discovery
 
 
-def refresh_metadata_phase(duration_hours):
+def refresh_metadata_phase(duration_seconds):
     """
-    Run metadata refresh for up to duration_hours.
+    Run metadata refresh for up to duration_seconds.
     Priority 1: Subreddits with NO metadata (title is null), ordered by first_mentioned (oldest first)
     Priority 2: Subreddits with metadata older than 24 hours, ordered by last_checked (oldest first)
     Priority 3: Subreddits marked as not found, re-checked every 7 days (they may have been created since)
     Note: Banned subreddits are never re-checked as bans are permanent.
     Updates last_checked timestamp after each refresh.
     """
-    logger.info(f"=== Starting Metadata Refresh Phase ({duration_hours} hours) ===")
+    logger.info(f"=== Starting Metadata Refresh Phase ({duration_seconds} seconds) ===")
     logger.info("Priority order: 1) Subreddits without metadata (oldest first), 2) Stale metadata >24h old, 3) Not-found subreddits every 7 days")
     
     # Count subreddits missing metadata at start
@@ -1438,7 +1449,7 @@ def refresh_metadata_phase(duration_hours):
         logger.info(f"Subreddits missing metadata: {missing_metadata_count}")
     
     start_time = time.time()
-    end_time = start_time + (duration_hours * 3600)
+    end_time = start_time + duration_seconds
     refreshed_count = 0
     
     while time.time() < end_time:
@@ -1601,8 +1612,8 @@ def main_loop():
     
     # Optionally start with metadata refresh before scanning
     if SCAN_FOR_METADATA_FIRST:
-        logger.info(f"SCAN_FOR_METADATA_FIRST enabled. Running initial metadata refresh for {METADATA_REFRESH_HOURS} hours...")
-        refresh_metadata_phase(METADATA_REFRESH_HOURS)
+        logger.info(f"SCAN_FOR_METADATA_FIRST enabled. Running initial metadata refresh for {METADATA_REFRESH_SECONDS} seconds...")
+        refresh_metadata_phase(METADATA_REFRESH_SECONDS)
         logger.info("Initial metadata refresh complete. Starting scanner main loop.")
     else:
         logger.info("Starting scanner main loop (skip startup metadata refresh)")
@@ -1719,8 +1730,8 @@ def main_loop():
                         logger.debug('Failed to record scan completion')
                 
                 # After scanning completes, run metadata refresh phase
-                logger.info(f'Scan complete. Starting metadata refresh phase for {METADATA_REFRESH_HOURS} hours...')
-                refresh_metadata_phase(METADATA_REFRESH_HOURS)
+                logger.info(f'Scan complete. Starting metadata refresh phase for {METADATA_REFRESH_SECONDS} seconds...')
+                refresh_metadata_phase(METADATA_REFRESH_SECONDS)
                 
                 # After metadata refresh completes, sleep briefly before next scan
                 logger.info('Metadata refresh complete. Sleeping 5 minutes before next scan iteration.')
@@ -1729,7 +1740,7 @@ def main_loop():
                 # No scan configs found in database — operate in idle mode:
                 # Just run continuous metadata refresh
                 logger.warning('No subreddit scan configs found in database. Running continuous metadata refresh.')
-                refresh_metadata_phase(METADATA_REFRESH_HOURS)
+                refresh_metadata_phase(METADATA_REFRESH_SECONDS)
                 logger.info('Idle metadata refresh complete. Sleeping 10 minutes before checking for scan configs again.')
                 time.sleep(600)
         except Exception as e:

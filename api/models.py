@@ -121,6 +121,56 @@ class IgnoredUser(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class Category(Base):
+    """Top-level categories for organizing content (e.g., 'Body Type', 'Sexual Position', 'Kinks')."""
+    __tablename__ = 'category'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    slug = Column(String(255), unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    icon = Column(String(50), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    tags = relationship('CategoryTag', back_populates='category', cascade='all, delete-orphan')
+
+
+class CategoryTag(Base):
+    """Sub-categories/tags within a category (e.g., 'BBW' under 'Body Type')."""
+    __tablename__ = 'category_tag'
+    id = Column(Integer, primary_key=True)
+    category_id = Column(Integer, ForeignKey('category.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    slug = Column(String(255), nullable=False, index=True)
+    keywords = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    icon = Column(String(50), nullable=True)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint('category_id', 'slug', name='uq_category_tag_category_slug'),
+    )
+    category = relationship('Category', back_populates='tags')
+    subreddit_associations = relationship('SubredditCategoryTag', back_populates='tag', cascade='all, delete-orphan')
+
+
+class SubredditCategoryTag(Base):
+    """Many-to-many relationship between subreddits and category tags."""
+    __tablename__ = 'subreddit_category_tag'
+    id = Column(Integer, primary_key=True)
+    subreddit_id = Column(Integer, ForeignKey('subreddit.id', ondelete='CASCADE'), nullable=False, index=True)
+    category_tag_id = Column(Integer, ForeignKey('category_tag.id', ondelete='CASCADE'), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    source = Column(String(50), nullable=True, default='manual')
+    confidence = Column(Integer, nullable=True)
+    __table_args__ = (
+        UniqueConstraint('subreddit_id', 'category_tag_id', name='uq_subreddit_category_tag'),
+    )
+    subreddit = relationship('Subreddit', backref='category_tags')
+    tag = relationship('CategoryTag', back_populates='subreddit_associations')
+
+
 # Configure relationships explicitly now that all classes are declared.
 from sqlalchemy.orm import relationship as _relationship
 
