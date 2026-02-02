@@ -1419,6 +1419,8 @@ def refresh_metadata_phase(duration_hours):
     Run metadata refresh for up to duration_hours.
     Priority 1: Subreddits with NO metadata (title is null), ordered by first_mentioned (oldest first)
     Priority 2: Subreddits with metadata older than 24 hours, ordered by last_checked (oldest first)
+    Priority 3: Subreddits marked as not found, re-checked every 7 days (they may have been created since)
+    Note: Banned subreddits are never re-checked as bans are permanent.
     Updates last_checked timestamp after each refresh.
     """
     logger.info(f"=== Starting Metadata Refresh Phase ({duration_hours} hours) ===")
@@ -1428,22 +1430,38 @@ def refresh_metadata_phase(duration_hours):
     
     while time.time() < end_time:
         with Session(engine) as session:
+            cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+            
             # Priority 1: Find one subreddit with NO metadata (oldest first_mentioned first)
+            # Exclude banned subreddits (permanent) and not-found subreddits (handled in Priority 3)
+            # Only retry if never checked OR last checked >24h ago (prevents hammering failed fetches)
             subreddit_to_refresh = session.query(models.Subreddit).filter(
                 models.Subreddit.title == None,
                 models.Subreddit.is_banned == False,
-                models.Subreddit.subreddit_found != False
+                models.Subreddit.subreddit_found != False,
+                (models.Subreddit.last_checked == None) | (models.Subreddit.last_checked < cutoff_24h)
             ).order_by(models.Subreddit.first_mentioned.asc()).first()
             
             # Priority 2: If no missing metadata, find subreddit with stale metadata (>24h old)
+            # Only for subreddits that exist (subreddit_found != False)
             if not subreddit_to_refresh:
-                cutoff = datetime.utcnow() - timedelta(hours=24)
                 subreddit_to_refresh = session.query(models.Subreddit).filter(
                     models.Subreddit.title != None,
                     models.Subreddit.last_checked != None,
-                    models.Subreddit.last_checked < cutoff,
+                    models.Subreddit.last_checked < cutoff_24h,
                     models.Subreddit.is_banned == False,
                     models.Subreddit.subreddit_found != False
+                ).order_by(models.Subreddit.last_checked.asc()).first()
+            
+            # Priority 3: Re-check "not found" subreddits every 7 days (they may have been created)
+            # Banned subreddits are never re-checked as bans are permanent
+            if not subreddit_to_refresh:
+                cutoff_7d = datetime.utcnow() - timedelta(days=7)
+                subreddit_to_refresh = session.query(models.Subreddit).filter(
+                    models.Subreddit.subreddit_found == False,
+                    models.Subreddit.is_banned == False,
+                    models.Subreddit.last_checked != None,
+                    models.Subreddit.last_checked < cutoff_7d
                 ).order_by(models.Subreddit.last_checked.asc()).first()
             
             # If no subreddits need refresh, we're done

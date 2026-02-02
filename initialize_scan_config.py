@@ -46,6 +46,12 @@ def initialize_config():
                 'allowed_users': None,  # All users
                 'nsfw_only': True,
                 'active': True
+            },
+            {
+                'subreddit_name': normalize('wowthisNSFWsubexists'),
+                'allowed_users': None,  # All users
+                'nsfw_only': True,
+                'active': True
             }
         ]
         
