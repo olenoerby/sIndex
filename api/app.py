@@ -696,6 +696,116 @@ def stats(days: int = None):
         return out
 
 
+@app.get("/stats/metadata")
+@cache_response(ttl_seconds=30)
+def metadata_stats():
+    """Statistics about subreddit metadata freshness and completeness."""
+    with Session(engine) as session:
+        out = {}
+        now = datetime.utcnow()
+        
+        try:
+            # Total subreddits
+            total = int(session.query(func.count(models.Subreddit.id)).scalar() or 0)
+            out['total_subreddits'] = total
+            
+            # Never checked (no metadata fetched yet)
+            never_checked = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked == None
+            ).scalar() or 0)
+            out['never_checked'] = never_checked
+            
+            # Metadata age thresholds
+            threshold_24h = now - timedelta(hours=24)
+            threshold_72h = now - timedelta(hours=72)
+            threshold_7d = now - timedelta(days=7)
+            
+            # Up-to-date (checked within 24 hours)
+            up_to_date = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked >= threshold_24h
+            ).scalar() or 0)
+            out['up_to_date'] = up_to_date
+            
+            # Stale (older than 24 hours)
+            stale_24h = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked < threshold_24h,
+                models.Subreddit.last_checked != None
+            ).scalar() or 0)
+            out['stale_24h_plus'] = stale_24h
+            
+            # Metadata age breakdown
+            fresh_0_24h = up_to_date
+            stale_24_72h = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked < threshold_24h,
+                models.Subreddit.last_checked >= threshold_72h
+            ).scalar() or 0)
+            old_3_7d = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked < threshold_72h,
+                models.Subreddit.last_checked >= threshold_7d
+            ).scalar() or 0)
+            very_old_7d_plus = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.last_checked < threshold_7d,
+                models.Subreddit.last_checked != None
+            ).scalar() or 0)
+            
+            out['metadata_age_breakdown'] = {
+                'fresh_0_24h': fresh_0_24h,
+                'stale_24_72h': stale_24_72h,
+                'old_3_7d': old_3_7d,
+                'very_old_7d_plus': very_old_7d_plus
+            }
+            
+            # Banned subreddits
+            banned = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.is_banned == True
+            ).scalar() or 0)
+            out['banned'] = banned
+            
+            # Subreddits that don't exist (404)
+            not_found = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.subreddit_found == False
+            ).scalar() or 0)
+            out['not_found'] = not_found
+            
+            # Pending retry (waiting after rate limit/error)
+            pending_retry = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.next_retry_at != None
+            ).scalar() or 0)
+            out['pending_retry'] = pending_retry
+            
+            # NSFW subreddits
+            nsfw = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.is_over18 == True
+            ).scalar() or 0)
+            out['nsfw_subreddits'] = nsfw
+            
+            # With subscriber data
+            with_subscribers = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.subscribers != None
+            ).scalar() or 0)
+            out['with_subscriber_data'] = with_subscribers
+            
+            # With descriptions
+            with_descriptions = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.description != None,
+                models.Subreddit.description != ''
+            ).scalar() or 0)
+            out['with_descriptions'] = with_descriptions
+            
+            # Without metadata (no title, subscribers, or description)
+            without_metadata = int(session.query(func.count(models.Subreddit.id)).filter(
+                models.Subreddit.title == None,
+                models.Subreddit.subscribers == None,
+                models.Subreddit.description == None
+            ).scalar() or 0)
+            out['without_metadata'] = without_metadata
+            
+        except Exception:
+            api_logger.exception("Failed to compute metadata stats")
+        
+        return out
+
+
 @app.get("/subreddits/{name}/mentions")
 def subreddit_mentions(name: str, page: int = 1, per_page: int = 50):
     """List mentions for a given subreddit (paginated)."""
