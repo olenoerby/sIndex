@@ -1014,16 +1014,6 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
         post = existing
         source_sub_str = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
         logger.info(f"Rescanning post {reddit_id} ({format_ts(post.created_utc)}) - {len(missing)} new, {len(edited)} edited comments{source_sub_str}")
-    try:
-        date_str = datetime.utcfromtimestamp(created_utc).strftime('%Y-%m-%d') if created_utc else 'unknown-date'
-    except Exception:
-        date_str = 'unknown-date'
-    source_sub = f" from /r/{source_subreddit_name}" if source_subreddit_name else ""
-    logger.info(f"Saved post {reddit_id} ({date_str}) - processing {len(missing)} new comments{source_sub}")
-    try:
-        increment_analytics(session, posts=1)
-    except Exception:
-        logger.debug('Failed to increment analytics for post')
 
     discovered = set()
 
