@@ -1,0 +1,411 @@
+// Analytics page (analytics.html) - Charts and statistics functionality
+
+const buttons = Array.from(document.querySelectorAll('.controls .btn'));
+let currentDays = 30;
+let timelineChart, subsChart;
+const textColor = '#d9e4f5';
+
+// Cache for change detection
+const cache = {
+  stats: {},
+  daily: {},
+  topBlocks: {}
+};
+
+const fmt = (n, opts={}) => (n ?? 0).toLocaleString('en-US', {maximumFractionDigits: 1, ...opts});
+const fmtDate = (iso) => iso ? new Date(iso).toLocaleString() : '—';
+
+// Initialize currentDays from cookie or default to 30
+function initializeDateRange(){
+  const savedDays = getCookie('sindex_analytics_date_range');
+  if(savedDays && !isNaN(savedDays)){
+    currentDays = Number(savedDays);
+  } else {
+    currentDays = 30;
+    setCookie('sindex_analytics_date_range', 30, 365);
+  }
+  
+  // Update button states based on currentDays
+  buttons.forEach(btn => {
+    const btnDays = Number(btn.dataset.days || 90);
+    if(btnDays === currentDays){
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  
+  // Update window display
+  const displayText = currentDays >= 999999 ? 'Window: All time' : `Window: ${currentDays} days`;
+  document.getElementById('window').textContent = displayText;
+  updateCardTitles();
+}
+
+// Update card titles to show the selected date range
+function updateCardTitles(){
+  const rangeText = currentDays >= 999999 ? 'All time' : `${currentDays}d`;
+  document.getElementById('totalMentionsTitle').textContent = `Total mentions (${rangeText})`;
+  document.getElementById('totalSubsTitle').textContent = `Total subreddits (${rangeText})`;
+  document.getElementById('totalPostsTitle').textContent = `Total posts (${rangeText})`;
+  document.getElementById('totalCommentsTitle').textContent = `Total comments (${rangeText})`;
+  document.getElementById('peakMentionTitle').textContent = `Peak mention day (${rangeText})`;
+  document.getElementById('newSubsTitle').textContent = `New subs (${rangeText})`;
+  document.getElementById('newSubsDesc').textContent = `First-time mentions in the last ${currentDays >= 999999 ? 'all days' : currentDays + ' days'}.`;
+  document.getElementById('topCommenterTitle').textContent = `Top commenter (${rangeText})`;
+}
+
+function bindControls(){
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const days = Number(btn.dataset.days);
+      currentDays = days;
+      buttons.forEach(b => b.classList.toggle('active', b === btn));
+      const displayText = days >= 999999 ? 'Window: All time' : `Window: ${days} days`;
+      document.getElementById('window').textContent = displayText;
+      updateCardTitles();
+      setCookie('sindex_analytics_date_range', days, 365);
+      fetchStats();
+      fetchDaily(days);
+      fetchTopBlocks();
+    });
+  });
+}
+
+async function fetchStats(){
+  try {
+    const res = await fetch(`/stats?days=${currentDays}`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const s = await res.json();
+    
+    // Only update if values changed
+    if(cache.stats.total_mentions !== s.total_mentions) {
+      const el = document.getElementById('totalMentions');
+      if(el) el.textContent = fmt(s.total_mentions);
+      cache.stats.total_mentions = s.total_mentions;
+    }
+    if(cache.stats.total_subreddits !== s.total_subreddits) {
+      const el = document.getElementById('totalSubs');
+      if(el) el.textContent = fmt(s.total_subreddits);
+      cache.stats.total_subreddits = s.total_subreddits;
+    }
+    if(cache.stats.total_posts !== s.total_posts) {
+      const el = document.getElementById('totalPosts');
+      if(el) el.textContent = fmt(s.total_posts);
+      cache.stats.total_posts = s.total_posts;
+    }
+    if(cache.stats.total_comments !== s.total_comments) {
+      const el = document.getElementById('totalComments');
+      if(el) el.textContent = fmt(s.total_comments);
+      cache.stats.total_comments = s.total_comments;
+    }
+    if(cache.stats.last_scanned !== s.last_scanned) {
+      const el = document.getElementById('lastScanned');
+      if(el) el.textContent = 'Last DB run: ' + fmtDate(s.last_scanned);
+      cache.stats.last_scanned = s.last_scanned;
+    }
+    if(cache.stats.last_scan_new_mentions !== s.last_scan_new_mentions) {
+      const el = document.getElementById('lastScanNewMentions');
+      if(el) el.textContent = fmt(s.last_scan_new_mentions ?? 0) + ' new mentions';
+      cache.stats.last_scan_new_mentions = s.last_scan_new_mentions;
+    }
+    const dur = s.last_scan_duration ? `${fmt(s.last_scan_duration, {maximumFractionDigits:0})}s` : '—';
+    const started = s.last_scan_started ? new Date(s.last_scan_started).toLocaleString() : '—';
+    const meta = `Started ${started} · Duration ${dur}`;
+    if(cache.stats.lastScanMeta !== meta) {
+      const el = document.getElementById('lastScanMeta');
+      if(el) el.textContent = meta;
+      cache.stats.lastScanMeta = meta;
+    }
+    const polledEl = document.getElementById('lastPolled');
+    if(polledEl) polledEl.textContent = 'Last polled: ' + new Date().toLocaleString();
+  } catch(err) {
+    console.warn('stats failed', err);
+    if(err.message && err.message.includes('JSON')) {
+      console.error('API server may not be running or endpoint returned HTML instead of JSON');
+    }
+  }
+}
+
+async function fetchMetadataStats(){
+  try {
+    const res = await fetch('/stats/metadata');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const m = await res.json();
+    
+    const total = m.total_subreddits || 0;
+    const pct = (val) => total > 0 ? ` (${((val / total) * 100).toFixed(1)}%)` : '';
+    
+    // Update metadata stats
+    document.getElementById('metaTotalSubs').textContent = fmt(total);
+    document.getElementById('metaUpToDate').textContent = fmt(m.up_to_date || 0);
+    document.getElementById('metaUpToDatePct').textContent = 'Checked within 24h' + pct(m.up_to_date || 0);
+    
+    document.getElementById('metaStale').textContent = fmt(m.stale_24h_plus || 0);
+    document.getElementById('metaStalePct').textContent = 'Older than 24h' + pct(m.stale_24h_plus || 0);
+    
+    document.getElementById('metaNeverChecked').textContent = fmt(m.never_checked || 0);
+    document.getElementById('metaNeverCheckedPct').textContent = 'No metadata fetched yet' + pct(m.never_checked || 0);
+    
+    document.getElementById('metaWithout').textContent = fmt(m.without_metadata || 0);
+    document.getElementById('metaWithoutPct').textContent = 'Missing title, subs & desc' + pct(m.without_metadata || 0);
+    
+    document.getElementById('metaBanned').textContent = fmt(m.banned || 0);
+    document.getElementById('metaBannedPct').textContent = 'Banned subreddits' + pct(m.banned || 0);
+    
+    document.getElementById('metaNotFound').textContent = fmt(m.not_found || 0);
+    document.getElementById('metaNotFoundPct').textContent = "Don't exist (404)" + pct(m.not_found || 0);
+    
+    document.getElementById('metaPendingRetry').textContent = fmt(m.pending_retry || 0);
+    document.getElementById('metaPendingRetryPct').textContent = 'Waiting after error' + pct(m.pending_retry || 0);
+    
+    document.getElementById('metaNsfw').textContent = fmt(m.nsfw_subreddits || 0);
+    document.getElementById('metaNsfwPct').textContent = '18+ subreddits' + pct(m.nsfw_subreddits || 0);
+    
+    document.getElementById('metaWithSubs').textContent = fmt(m.with_subscriber_data || 0);
+    document.getElementById('metaWithSubsPct').textContent = 'Have subscriber counts' + pct(m.with_subscriber_data || 0);
+    
+    document.getElementById('metaWithDesc').textContent = fmt(m.with_descriptions || 0);
+    document.getElementById('metaWithDescPct').textContent = 'Have description text' + pct(m.with_descriptions || 0);
+  } catch(err) {
+    console.warn('metadata stats failed', err);
+    if(err.message && err.message.includes('JSON')) {
+      console.error('API server may not be running. Please start docker-compose to access analytics data.');
+    }
+  }
+}
+
+function ensureCharts(){
+  if(!timelineChart){
+    const ctx = document.getElementById('timelineChart').getContext('2d');
+    timelineChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [
+        { label: 'Mentions', data: [], borderColor: '#1ec6b3', backgroundColor: 'rgba(30,198,179,0.12)', tension: 0.4, fill: true },
+        { label: 'Posts', data: [], borderColor: '#7dd3fc', backgroundColor: 'rgba(125,211,252,0.1)', tension: 0.4, fill: true },
+        { label: 'Comments', data: [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.1)', tension: 0.4, fill: true }
+      ]},
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: textColor } } },
+        scales: {
+          x: { ticks: { color: textColor }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: textColor }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+  if(!subsChart){
+    const ctx = document.getElementById('subsChart').getContext('2d');
+    subsChart = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: [], datasets: [
+        { label: 'New subreddits', data: [], backgroundColor: 'rgba(30,198,179,0.5)', borderColor: '#1ec6b3', borderWidth: 1.5 },
+        { label: 'Mentions', data: [], backgroundColor: 'rgba(249,115,22,0.35)', borderColor: '#f97316', borderWidth: 1.5 }
+      ]},
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: textColor } } },
+        scales: {
+          x: { ticks: { color: textColor }, grid: { display: false }, barPercentage: 0.8, categoryPercentage: 0.9 },
+          y: { ticks: { color: textColor }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+  }
+}
+
+async function fetchDaily(days){
+  ensureCharts();
+  try {
+    const res = await fetch(`/stats/daily?days=${days}`);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const { items=[] } = await res.json();
+
+    // Respect the requested window client-side in case the server returns a larger set
+    const visibleItems = (days >= 999999) ? items : items.slice(-Math.max(0, Number(days)));
+
+    // Create a hash of the visible data to detect changes
+    const dataKey = JSON.stringify(visibleItems);
+    if(cache.daily[days] === dataKey) {
+      return; // No changes, skip update
+    }
+    cache.daily[days] = dataKey;
+
+    const labels = visibleItems.map(it => it.date);
+    const mentions = visibleItems.map(it => it.mentions || 0);
+    const posts = visibleItems.map(it => it.posts || 0);
+    const comments = visibleItems.map(it => it.comments || 0);
+    const newSubs = visibleItems.map(it => it.new_subreddits || 0);
+
+    // Update timeline chart
+    timelineChart.data.labels = labels;
+    timelineChart.data.datasets[0].data = mentions;
+    timelineChart.data.datasets[1].data = posts;
+    timelineChart.data.datasets[2].data = comments;
+    timelineChart.update();
+
+    // Update subs chart (smaller set for readability)
+    const sampleEvery = Math.max(1, Math.floor(labels.length / 40));
+    const slimLabels = labels.filter((_, idx) => idx % sampleEvery === 0);
+    const slimSubs = newSubs.filter((_, idx) => idx % sampleEvery === 0);
+    const slimMentions = mentions.filter((_, idx) => idx % sampleEvery === 0);
+    subsChart.data.labels = slimLabels;
+    subsChart.data.datasets[0].data = slimSubs;
+    subsChart.data.datasets[1].data = slimMentions;
+    subsChart.update();
+
+    const totalMentions = mentions.reduce((a,b) => a+b, 0);
+    const totalPosts = posts.reduce((a,b) => a+b, 0);
+    const totalComments = comments.reduce((a,b) => a+b, 0);
+    const avgMentions = mentions.length ? totalMentions / mentions.length : 0;
+    // Show average for last 7 days within the selected (visible) range
+    const daysToShow = Math.min(7, mentions.length);
+    const last7 = mentions.slice(-daysToShow);
+    const avg7 = last7.length ? last7.reduce((a,b)=>a+b,0) / last7.length : 0;
+    document.getElementById('mentionsPerDay').textContent = `${fmt(avgMentions)} avg/day · ${fmt(avg7)} last ${daysToShow}d`;
+    document.getElementById('mentionsPerPost').textContent = totalPosts ? `${fmt(totalMentions / totalPosts)} mentions per post` : '—';
+    document.getElementById('commentsPerPost').textContent = totalPosts ? `${fmt(totalComments / totalPosts)} comments per post` : '—';
+
+    // Peak day
+    let peakIdx = 0; let peakVal = 0;
+    mentions.forEach((v, i) => { if(v > peakVal){ peakVal = v; peakIdx = i; } });
+    document.getElementById('peakDay').textContent = labels[peakIdx] || '—';
+    document.getElementById('peakValue').textContent = `${fmt(peakVal)} mentions on peak day`;
+
+    // New subs within the selected date range
+    // newSubs already reflects the visible window, so sum directly
+    const sumNewSubs = newSubs.reduce((a,b)=>a+b,0);
+    document.getElementById('newSubs30').textContent = fmt(sumNewSubs);
+    
+    // Summaries
+    const lastLabel = labels[labels.length-1];
+    document.getElementById('timelineSummary').textContent = `${fmt(totalMentions)} mentions, ${fmt(totalPosts)} posts, ${fmt(totalComments)} comments across ${labels.length} days`;
+    const peakSubs = Math.max(...newSubs, 0);
+    document.getElementById('subsSummary').textContent = `${fmt(sumNewSubs)} new subs (${currentDays >= 999999 ? 'all time' : currentDays + 'd'}) · peak ${fmt(peakSubs)} in a day`;
+  } catch(err) {
+    console.warn('daily failed', err);
+    if(err.message && err.message.includes('JSON')) {
+      console.error('API server may not be running. Please start docker-compose to access analytics data.');
+    }
+  }
+}
+
+async function fetchTopBlocks(){
+  try {
+    // Top subreddits
+    const ts = await fetch(`/stats/top?limit=20&days=${currentDays}`);
+    if(ts.ok){
+      const data = await ts.json();
+      const dataKey = JSON.stringify(data.slice(0,15));
+      if(cache.topBlocks.subreddits !== dataKey) {
+        cache.topBlocks.subreddits = dataKey;
+        const tbody = document.querySelector('#topSubredditsTable tbody');
+        tbody.innerHTML = '';
+        data.slice(0,15).forEach((row, idx) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${idx+1}</td><td>/r/${row.name}</td><td>${fmt(row.mentions)}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    // Top commenters
+    const tc = await fetch(`/stats/top_commenters?limit=15&days=${currentDays}`);
+    if(tc.ok){
+      const data = await tc.json();
+      const dataKey = JSON.stringify(data);
+      if(cache.topBlocks.commenters !== dataKey) {
+        cache.topBlocks.commenters = dataKey;
+        const tbody = document.querySelector('#topCommentersTable tbody');
+        tbody.innerHTML = '';
+        let topName = '—', topCount = '—';
+        let rowNum = 1;
+        (data.items || []).slice(0,15).forEach((row) => {
+          if(!row.user_id){ return; }
+          const label = row.user_id;
+          let userCell = '';
+          if(label.toLowerCase() === '[deleted]'){
+            userCell = '[deleted]';
+          } else {
+            const href = `https://www.reddit.com/user/${encodeURIComponent(label)}`;
+            userCell = `<a href="${href}" target="_blank">${label}</a>`;
+          }
+          if(topName === '—'){ topName = label === '[deleted]' ? '[deleted]' : label; topCount = fmt(row.comments); }
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${rowNum}</td><td>${userCell}</td><td>${fmt(row.comments)}</td>`;
+          tbody.appendChild(tr);
+          rowNum++;
+        });
+        document.getElementById('topCommenterName').textContent = topName;
+        document.getElementById('topCommenterCount').textContent = `${topCount} comments logged`;
+      }
+    }
+
+    // Top posts (by mentions)
+    const tp = await fetch(`/stats/top_posts?limit=15&days=${currentDays}`);
+    if(tp.ok){
+      const data = await tp.json();
+      const dataKey = JSON.stringify(data);
+      if(cache.topBlocks.posts !== dataKey) {
+        cache.topBlocks.posts = dataKey;
+        const tbody = document.querySelector('#topPostsTable tbody');
+        tbody.innerHTML = '';
+        (data.items || []).slice(0,15).forEach((row, idx) => {
+          const title = (row.title || row.reddit_post_id || '').slice(0,120) || '(untitled)';
+          const url = `https://www.reddit.com/comments/${encodeURIComponent(row.reddit_post_id)}`;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${idx+1}</td><td><a href="${url}" target="_blank">${title}</a></td><td>${fmt(row.mentions)}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    // Top posts by distinct subreddits
+    const tu = await fetch(`/stats/top_unique_posts?limit=15&days=${currentDays}`);
+    if(tu.ok){
+      const data = await tu.json();
+      const dataKey = JSON.stringify(data);
+      if(cache.topBlocks.uniquePosts !== dataKey) {
+        cache.topBlocks.uniquePosts = dataKey;
+        const tbody = document.querySelector('#topUniquePostsTable tbody');
+        tbody.innerHTML = '';
+        (data.items || []).slice(0,15).forEach((row, idx) => {
+          const title = (row.title || row.reddit_post_id || '').slice(0,120) || '(untitled)';
+          const url = `https://www.reddit.com/comments/${encodeURIComponent(row.reddit_post_id)}`;
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${idx+1}</td><td><a href="${url}" target="_blank">${title}</a></td><td>${fmt(row.unique_subreddits)}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+  } catch(err) {
+    console.warn('top blocks failed', err);
+    if(err.message && err.message.includes('JSON')) {
+      console.error('API server may not be running. Please start docker-compose to access analytics data.');
+    }
+  }
+}
+
+bindControls();
+initializeDateRange();
+
+// Initialize with age gate
+function init() {
+  // Initial load
+  fetchStats();
+  fetchMetadataStats();
+  fetchDaily(currentDays);
+  fetchTopBlocks();
+  
+  // Auto-refresh every 30 seconds
+  setInterval(() => { 
+    fetchStats();
+    fetchMetadataStats();
+    fetchDaily(currentDays);
+    fetchTopBlocks();
+  }, 30000);
+}
+
+initWithAgeGate(init);
