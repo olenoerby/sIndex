@@ -9,7 +9,8 @@
 			"docker compose": true,
 			"docker-compose": true,
 			"ssh": true,
-			"git add": true
+			"git add": true,
+			"git commit": true
 		}
 	}
 }
