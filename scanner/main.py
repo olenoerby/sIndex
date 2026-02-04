@@ -85,6 +85,8 @@ SCAN_SLEEP_SECONDS = int(os.getenv('SCAN_SLEEP_SECONDS', '300'))
 # Max retries for subreddit about fetches and per-request HTTP timeout (seconds)
 SUBABOUT_MAX_RETRIES = int(os.getenv('SUBABOUT_MAX_RETRIES', '3'))
 HTTP_REQUEST_TIMEOUT = float(os.getenv('HTTP_REQUEST_TIMEOUT', '15'))
+# How many hours before metadata is considered stale and needs refreshing
+METADATA_STALE_HOURS = int(os.getenv('METADATA_STALE_HOURS', '24'))
 
 # Global lock and timestamp for serializing and spacing subreddit about requests
 # NOTE: With RateLimiter in place, these are legacy. RateLimiter handles all API throttling.
@@ -1471,13 +1473,13 @@ def refresh_metadata_phase(duration_seconds):
     Run metadata refresh for up to duration_seconds.
     Priority 1: Subreddits NEVER scanned (last_checked is null), ordered by first_mentioned (oldest first)
     Priority 2: Subreddits missing ANY metadata (title, subscribers, or description), ordered by first_mentioned (oldest first)
-    Priority 3: Subreddits with stale metadata (>24h old), ordered by last_checked (oldest first)
+    Priority 3: Subreddits with stale metadata (configured by METADATA_STALE_HOURS), ordered by last_checked (oldest first)
     Priority 4: Not-found subreddits re-checked every 7 days (they may have been created since)
     Note: Banned subreddits are never re-checked as bans are permanent.
     Updates last_checked timestamp after each refresh.
     """
     logger.info(f"=== Starting Metadata Refresh Phase ({duration_seconds} seconds) ===")
-    logger.info("Priority: 1) Never scanned, 2) Missing any metadata, 3) Stale metadata >24h, 4) Not-found subreddits every 7d")
+    logger.info(f"Priority: 1) Never scanned, 2) Missing any metadata, 3) Stale metadata >{METADATA_STALE_HOURS}h, 4) Not-found subreddits every 7d")
     
     # Count subreddits in each priority at start
     with Session(engine) as session:
@@ -1508,7 +1510,7 @@ def refresh_metadata_phase(duration_seconds):
     
     while time.time() < end_time:
         with Session(engine) as session:
-            cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+            cutoff_24h = datetime.utcnow() - timedelta(hours=METADATA_STALE_HOURS)
             
             # Priority 1: Subreddits NEVER scanned (last_checked is null)
             # Ordered by first_mentioned (oldest discoveries first)
@@ -1541,7 +1543,7 @@ def refresh_metadata_phase(duration_seconds):
                     priority_level = 2
                     priority_desc = "Missing metadata"
             
-            # Priority 3: Subreddits with stale metadata (>24h old)
+            # Priority 3: Subreddits with stale metadata (configured by METADATA_STALE_HOURS)
             # Only for subreddits that have metadata (non-NULL, empty strings are ok)
             if not subreddit_to_refresh:
                 subreddit_to_refresh = session.query(models.Subreddit).filter(
@@ -1555,7 +1557,7 @@ def refresh_metadata_phase(duration_seconds):
                 ).order_by(models.Subreddit.last_checked.asc()).first()
                 if subreddit_to_refresh:
                     priority_level = 3
-                    priority_desc = "Stale metadata >24h"
+                    priority_desc = f"Stale metadata >{METADATA_STALE_HOURS}h"
             
             # Priority 4: Re-check "not found" subreddits every 7 days (they may have been created)
             # Banned subreddits are never re-checked as bans are permanent

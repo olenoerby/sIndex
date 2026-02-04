@@ -30,6 +30,7 @@ api_logger.addHandler(sh)
 # Configuration and DB
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+psycopg2://pineapple:pineapple@db:5432/pineapple")
 META_CACHE_DAYS = int(os.getenv('META_CACHE_DAYS', '7'))
+METADATA_STALE_HOURS = int(os.getenv('METADATA_STALE_HOURS', '24'))
 API_RATE_DELAY = float(os.getenv('API_RATE_DELAY', '6.5'))
 REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
 
@@ -696,6 +697,15 @@ def stats(days: int = None):
         return out
 
 
+@app.get("/config")
+@cache_response(ttl_seconds=300)
+def get_config():
+    """Public configuration values for the frontend."""
+    return {
+        "metadata_stale_hours": METADATA_STALE_HOURS
+    }
+
+
 @app.get("/stats/metadata")
 @cache_response(ttl_seconds=30)
 def metadata_stats():
@@ -716,17 +726,17 @@ def metadata_stats():
             out['never_checked'] = never_checked
             
             # Metadata age thresholds
-            threshold_24h = now - timedelta(hours=24)
+            threshold_24h = now - timedelta(hours=METADATA_STALE_HOURS)
             threshold_72h = now - timedelta(hours=72)
             threshold_7d = now - timedelta(days=7)
             
-            # Up-to-date (checked within 24 hours)
+            # Up-to-date (checked within configured METADATA_STALE_HOURS)
             up_to_date = int(session.query(func.count(models.Subreddit.id)).filter(
                 models.Subreddit.last_checked >= threshold_24h
             ).scalar() or 0)
             out['up_to_date'] = up_to_date
             
-            # Stale (older than 24 hours)
+            # Stale (older than configured METADATA_STALE_HOURS)
             stale_24h = int(session.query(func.count(models.Subreddit.id)).filter(
                 models.Subreddit.last_checked < threshold_24h,
                 models.Subreddit.last_checked != None

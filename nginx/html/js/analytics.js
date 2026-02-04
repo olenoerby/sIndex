@@ -13,8 +13,23 @@ const cache = {
   topBlocks: {}
 };
 
+// Config cache (fetched from API)
+let appConfig = { metadata_stale_hours: 24 }; // Default fallback
+
 const fmt = (n, opts={}) => (n ?? 0).toLocaleString('en-US', {maximumFractionDigits: 1, ...opts});
 const fmtDate = (iso) => iso ? new Date(iso).toLocaleString() : '—';
+
+// Fetch app configuration from API
+async function fetchConfig(){
+  try {
+    const res = await fetch('/config');
+    if(res.ok) {
+      appConfig = await res.json();
+    }
+  } catch(err) {
+    console.warn('Failed to fetch config, using defaults', err);
+  }
+}
 
 // Initialize currentDays from cookie or default to 30
 function initializeDateRange(){
@@ -148,14 +163,15 @@ async function fetchMetadataStats(){
     
     const total = m.total_subreddits || 0;
     const pct = (val) => total > 0 ? ` (${((val / total) * 100).toFixed(1)}%)` : '';
+    const staleHours = appConfig.metadata_stale_hours || 24;
     
     // Update metadata stats
     document.getElementById('metaTotalSubs').textContent = fmt(total);
     document.getElementById('metaUpToDate').textContent = fmt(m.up_to_date || 0);
-    document.getElementById('metaUpToDatePct').textContent = 'Checked within 24h' + pct(m.up_to_date || 0);
+    document.getElementById('metaUpToDatePct').textContent = `Checked within ${staleHours}h` + pct(m.up_to_date || 0);
     
     document.getElementById('metaStale').textContent = fmt(m.stale_24h_plus || 0);
-    document.getElementById('metaStalePct').textContent = 'Older than 24h' + pct(m.stale_24h_plus || 0);
+    document.getElementById('metaStalePct').textContent = `Older than ${staleHours}h` + pct(m.stale_24h_plus || 0);
     
     document.getElementById('metaNeverChecked').textContent = fmt(m.never_checked || 0);
     document.getElementById('metaNeverCheckedPct').textContent = 'No metadata fetched yet' + pct(m.never_checked || 0);
@@ -406,8 +422,9 @@ bindControls();
 initializeDateRange();
 
 // Initialize with age gate
-function init() {
-  // Initial load
+async function init() {
+  // Fetch config first, then load data
+  await fetchConfig();
   fetchStats();
   fetchMetadataStats();
   fetchDaily(currentDays);
