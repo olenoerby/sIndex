@@ -811,7 +811,7 @@ def should_refresh_sub(sub: models.Subreddit, now: datetime = None) -> bool:
         missing = (
             not getattr(sub, 'display_name', None) or
             not getattr(sub, 'title', None) or
-            not getattr(sub, 'public_description', None) or
+            not getattr(sub, 'description', None) or
             (getattr(sub, 'subscribers', None) is None)
         )
         if missing:
@@ -1322,9 +1322,14 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
             except Exception:
                 pass
 
-            # Store Reddit's public_description field
+            # Store Reddit's public_description field (use empty string if None to avoid infinite retry loop)
             try:
-                sub.public_description = data.get('public_description') or sub.public_description
+                public_desc = data.get('public_description')
+                if public_desc is not None:
+                    sub.description = public_desc
+                elif sub.description is None:
+                    # Set to empty string if Reddit returns None and we don't have a value
+                    sub.description = ''
             except Exception:
                 pass
 
@@ -1473,9 +1478,11 @@ def refresh_metadata_phase(duration_seconds):
             models.Subreddit.last_checked != None,
             models.Subreddit.is_banned == False,
             models.Subreddit.subreddit_found != False,
-            (models.Subreddit.title == None) | 
-            (models.Subreddit.subscribers == None) | 
-            (models.Subreddit.public_description == None)
+            (
+                (models.Subreddit.title == None) | (models.Subreddit.title == '') |
+                (models.Subreddit.subscribers == None) |
+                (models.Subreddit.description == None) | (models.Subreddit.description == '')
+            )
         ).count()
         
         logger.info(f"Never scanned: {never_scanned}, Missing metadata: {missing_metadata}")
@@ -1502,28 +1509,32 @@ def refresh_metadata_phase(duration_seconds):
                 priority_level = 1
                 priority_desc = "Never scanned"
             
-            # Priority 2: Subreddits missing ANY metadata (title, subscribers, or public_description)
-            # Even if recently checked - we want complete metadata for all subreddits
+            # Priority 2: Subreddits missing ANY metadata (title, subscribers, or description)
+            # Check for NULL or empty string - we want complete metadata for all subreddits
             if not subreddit_to_refresh:
                 subreddit_to_refresh = session.query(models.Subreddit).filter(
                     models.Subreddit.last_checked != None,
                     models.Subreddit.is_banned == False,
                     models.Subreddit.subreddit_found != False,
-                    (models.Subreddit.title == None) | 
-                    (models.Subreddit.subscribers == None) | 
-                    (models.Subreddit.public_description == None)
+                    (
+                        (models.Subreddit.title == None) | (models.Subreddit.title == '') |
+                        (models.Subreddit.subscribers == None) |
+                        (models.Subreddit.description == None) | (models.Subreddit.description == '')
+                    )
                 ).order_by(models.Subreddit.first_mentioned.asc()).first()
                 if subreddit_to_refresh:
                     priority_level = 2
                     priority_desc = "Missing metadata"
             
             # Priority 3: Subreddits with stale metadata (>24h old)
-            # Only for subreddits that exist and have complete metadata
+            # Only for subreddits that exist and have complete metadata (non-NULL and non-empty)
             if not subreddit_to_refresh:
                 subreddit_to_refresh = session.query(models.Subreddit).filter(
                     models.Subreddit.title != None,
+                    models.Subreddit.title != '',
                     models.Subreddit.subscribers != None,
-                    models.Subreddit.public_description != None,
+                    models.Subreddit.description != None,
+                    models.Subreddit.description != '',
                     models.Subreddit.last_checked != None,
                     models.Subreddit.last_checked < cutoff_24h,
                     models.Subreddit.is_banned == False,
@@ -1570,9 +1581,11 @@ def refresh_metadata_phase(duration_seconds):
                     models.Subreddit.last_checked != None,
                     models.Subreddit.is_banned == False,
                     models.Subreddit.subreddit_found != False,
-                    (models.Subreddit.title == None) | 
-                    (models.Subreddit.subscribers == None) | 
-                    (models.Subreddit.public_description == None)
+                    (
+                        (models.Subreddit.title == None) | (models.Subreddit.title == '') |
+                        (models.Subreddit.subscribers == None) |
+                        (models.Subreddit.description == None) | (models.Subreddit.description == '')
+                    )
                 ).count()
                 remaining_msg = f" [{remaining_count} missing metadata remaining]"
             
@@ -1616,9 +1629,11 @@ def refresh_metadata_phase(duration_seconds):
             models.Subreddit.last_checked != None,
             models.Subreddit.is_banned == False,
             models.Subreddit.subreddit_found != False,
-            (models.Subreddit.title == None) | 
-            (models.Subreddit.subscribers == None) | 
-            (models.Subreddit.public_description == None)
+            (
+                (models.Subreddit.title == None) | (models.Subreddit.title == '') |
+                (models.Subreddit.subscribers == None) |
+                (models.Subreddit.description == None) | (models.Subreddit.description == '')
+            )
         ).count()
         
         logger.info(f"=== Metadata Refresh Phase Complete: {refreshed_count} subreddits refreshed in {elapsed/3600:.2f} hours ===")
