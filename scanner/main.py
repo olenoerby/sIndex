@@ -187,9 +187,15 @@ rate_limiter = RateLimiter(API_MAX_CALLS_MINUTE, min_delay_seconds=API_RATE_DELA
 
 # Patterns for subreddit mentions. Accepts r/name, /r/name and reddit url forms.
 RE_SUB = re.compile(r"(?:/r/|\br/|https?://(?:www\.)?reddit\.com/r/)([A-Za-z0-9_]{3,21})")
+# Pattern for user mentions. Accepts u/name, /u/name and reddit url forms.
+RE_USER = re.compile(r"(?:/u/|\bu/|https?://(?:www\.)?reddit\.com/u(?:ser)?/)([A-Za-z0-9_-]{3,20})")
 
 def normalize(name: str) -> str:
-    return name.lower().strip().lstrip('/').lstrip('r/').replace('\n','')
+    return name.lower().strip().lstrip('/').lstrip('r/').lstrip('u/').replace('\n','')
+
+def is_user_profile(name: str) -> bool:
+    """Check if a normalized name represents a user profile (u_ prefix)."""
+    return name.startswith('u_')
 
 
 def format_ts(ts: int) -> str:
@@ -563,10 +569,26 @@ def record_scan_completion(session: Session, scan_start_time: float, new_mention
 
 
 def fetch_subreddit_posts(subname: str, after: str = None):
-    """Fetch recent posts for a subreddit (`/r/{subname}/new.json`). Returns parsed JSON."""
-    url = f"https://www.reddit.com/r/{subname}/new.json?limit=100"
+    """Fetch recent posts for a subreddit or user.
+    
+    For regular subreddits: /r/{subname}/new.json
+    For user profiles (u_username): /user/{username}/submitted.json
+    
+    Returns parsed JSON.
+    """
+    # Check if this is a user profile
+    if is_user_profile(subname):
+        # Extract username (remove u_ prefix)
+        username = subname[2:]  # Remove 'u_' prefix
+        url = f"https://www.reddit.com/user/{username}/submitted.json?limit=100&sort=new"
+        entity_label = f"/u/{username}"
+    else:
+        url = f"https://www.reddit.com/r/{subname}/new.json?limit=100"
+        entity_label = f"/r/{subname}"
+    
     if after:
         url += f"&after={after}"
+    
     headers = {"User-Agent": "PineappleIndexBot/0.1 (by /u/yourbot)"}
     timeout = HTTP_REQUEST_TIMEOUT
     # Respect the distributed/local rate limiter BEFORE making the request
@@ -581,10 +603,10 @@ def fetch_subreddit_posts(subname: str, after: str = None):
     try:
         r = httpx.get(url, headers=headers, timeout=timeout)
     except httpx.ReadTimeout as e:
-        logger.warning(f"Read timeout fetching /r/{subname} posts (after={after}): {e}")
+        logger.warning(f"Read timeout fetching {entity_label} posts (after={after}): {e}")
         raise
     except httpx.RequestError as e:
-        logger.warning(f"Network error fetching /r/{subname} posts (after={after}): {e}")
+        logger.warning(f"Network error fetching {entity_label} posts (after={after}): {e}")
         raise
 
     # Record this API call in distributed limiter so other containers see it
@@ -595,21 +617,21 @@ def fetch_subreddit_posts(subname: str, after: str = None):
         pass
 
     # Log response status and headers for debugging
-    logger.debug(f"fetch_subreddit_posts /r/{subname}: status_code={r.status_code}, headers={dict(r.headers)}")
+    logger.debug(f"fetch_subreddit_posts {entity_label}: status_code={r.status_code}, headers={dict(r.headers)}")
     
     # Check for error status codes before raising
     if r.status_code == 429:
         retry_after = r.headers.get('Retry-After', 'unknown')
         retry_seconds = _parse_retry_after(retry_after) if retry_after != 'unknown' else None
         if retry_seconds:
-            logger.warning(f"Rate limited fetching /r/{subname}: 429 Too Many Requests, Retry-After={retry_after} ({retry_seconds}s). Waiting...")
+            logger.warning(f"Rate limited fetching {entity_label}: 429 Too Many Requests, Retry-After={retry_after} ({retry_seconds}s). Waiting...")
             time.sleep(retry_seconds + 1)  # Add 1 second buffer
         else:
             # No valid Retry-After, use exponential backoff starting at 60s
             wait_time = 60
-            logger.warning(f"Rate limited fetching /r/{subname}: 429 Too Many Requests, Retry-After={retry_after}. Waiting {wait_time}s...")
+            logger.warning(f"Rate limited fetching {entity_label}: 429 Too Many Requests, Retry-After={retry_after}. Waiting {wait_time}s...")
             time.sleep(wait_time)
-        raise Exception(f"HTTP 429 Rate Limited on /r/{subname}; Retry-After={retry_after}")
+        raise Exception(f"HTTP 429 Rate Limited on {entity_label}; Retry-After={retry_after}")
     
     r.raise_for_status()
     return r.json()
@@ -703,7 +725,20 @@ def fetch_post_comments(post_id: str, max_retries: int = 5):
 
 
 def fetch_sub_about(name: str):
-    url = f"https://www.reddit.com/r/{name}/about.json"
+    """Fetch about.json for a subreddit or user profile.
+    
+    For regular subreddits: /r/{name}/about.json
+    For user profiles (u_username): /user/{username}/about.json
+    """
+    if is_user_profile(name):
+        # Extract username (remove u_ prefix)
+        username = name[2:]
+        url = f"https://www.reddit.com/user/{username}/about.json"
+        entity_label = f"/u/{username}"
+    else:
+        url = f"https://www.reddit.com/r/{name}/about.json"
+        entity_label = f"/r/{name}"
+    
     headers = {"User-Agent": "PineappleIndexBot/0.1 (by /u/yourbot)"}
     max_retries = SUBABOUT_MAX_RETRIES
     timeout = HTTP_REQUEST_TIMEOUT
@@ -746,7 +781,7 @@ def fetch_sub_about(name: str):
         except httpx.ReadTimeout as e:
             if attempt <= max_retries:
                 sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
-                logger.warning(f"Read timeout fetching /r/{name} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
+                logger.warning(f"Read timeout fetching {entity_label} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
                 time.sleep(sleep_for)
                 continue
             # re-raise so caller can log/handle
@@ -755,7 +790,7 @@ def fetch_sub_about(name: str):
             # network-level errors
             if attempt <= max_retries:
                 sleep_for = min(60, base_sleep * (2 ** (attempt - 1)))
-                logger.warning(f"Network error fetching /r/{name} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
+                logger.warning(f"Network error fetching {entity_label} (attempt {attempt}/{max_retries}), retrying in {sleep_for}s: {e}")
                 time.sleep(sleep_for)
                 continue
             raise
@@ -778,7 +813,7 @@ def fetch_sub_about(name: str):
                 backoff = max(1, ra)
             # Respect global API_RATE_DELAY_SECONDS as a minimum pause between retries
             sleep_for = max(API_RATE_DELAY_SECONDS, backoff)
-            logger.warning(f"Received 429 for /r/{name}; retry {attempt}/{max_retries} after {sleep_for}s (backoff={backoff})")
+            logger.warning(f"Received 429 for {entity_label}; retry {attempt}/{max_retries} after {sleep_for}s (backoff={backoff})")
             if attempt <= max_retries:
                 time.sleep(sleep_for)
                 continue
@@ -873,16 +908,26 @@ def walk_comments(data, found):
 
 
 def extract_subreddits_from_text(text: str):
-    """Extract subreddit mentions and their contexts from text.
-    Returns a dict: {normalized_name: (raw_text, context_snippet)}
+    """Extract subreddit and user mentions from text.
+    Returns a dict: {normalized_name: (raw_text, context_snippet, is_user)}
+    
+    Handles:
+    - /r/subreddit or r/subreddit (regular subreddits)
+    - /r/u_username (user profile subreddits)
+    - /u/username or u/username (user mentions)
     """
     results = {}
+    
+    # Extract subreddit mentions (including /r/u_ user profiles)
     for m in RE_SUB.findall(text or ''):
         nm = normalize(m)
-        # Skip user accounts (e.g., /r/u_username) - these are not subreddits
-        if nm.startswith('u_'):
+        is_user = is_user_profile(nm)
+        
+        # Skip special subreddits
+        if not is_user and nm in ('all', 'random'):
             continue
-        if 3 <= len(nm) <= 21 and nm not in ('all','random'):
+            
+        if 3 <= len(nm) <= 21:
             # Extract context around this mention (±50 chars)
             match_idx = (text or '').lower().find(m.lower())
             if match_idx >= 0:
@@ -891,7 +936,27 @@ def extract_subreddits_from_text(text: str):
                 context = text[start:end].strip()
             else:
                 context = m
-            results[nm] = (m, context[:200])  # store raw text and truncated context
+            results[nm] = (m, context[:200], is_user)  # store raw text, context, and user flag
+    
+    # Extract direct user mentions (/u/username)
+    for m in RE_USER.findall(text or ''):
+        nm = 'u_' + normalize(m)  # Store as u_username for consistency
+        
+        if 5 <= len(nm) <= 23:  # u_ + 3-20 char username
+            # Skip if already found as /r/u_username
+            if nm in results:
+                continue
+            
+            # Extract context around this mention (±50 chars)
+            match_idx = (text or '').lower().find(m.lower())
+            if match_idx >= 0:
+                start = max(0, match_idx - 50)
+                end = min(len(text), match_idx + len(m) + 50)
+                context = text[start:end].strip()
+            else:
+                context = m
+            results[nm] = (m, context[:200], True)  # store raw text, context, and user flag
+    
     return results
 
 
@@ -1095,22 +1160,31 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             except Exception:
                 logger.debug('Failed to increment analytics for comment')
 
-        for sname, (raw_text, context) in subnames.items():
+        for sname, (raw_text, context, is_user) in subnames.items():
             # Skip ignored subreddits (configured via database)
-            if sname in ignored_subreddits:
+            # Only apply ignore list to actual subreddits, not user profiles
+            if not is_user and sname in ignored_subreddits:
                 logger.debug(f"Skipping ignored subreddit: /r/{sname}")
                 continue
 
-            logger.debug(f"Processing mention: /r/{sname} (raw={raw_text})")
+            # Format display name based on type
+            if is_user:
+                # Remove u_ prefix for display
+                username = sname[2:] if sname.startswith('u_') else sname
+                entity_label = f"/u/{username}"
+            else:
+                entity_label = f"/r/{sname}"
+            
+            logger.debug(f"Processing mention: {entity_label} (raw={raw_text})")
 
-            # get or create subreddit
+            # get or create subreddit (stores both subreddits and user profiles)
             sub = session.query(models.Subreddit).filter_by(name=sname).first()
             is_new_subreddit = (sub is None)
             if not sub:
                 sub = models.Subreddit(name=sname)
                 session.add(sub)
                 session.commit()
-                logger.debug(f"New subreddit discovered: /r/{sname}")
+                logger.debug(f"New {'user' if is_user else 'subreddit'} discovered: {entity_label}")
                 try:
                     increment_analytics(session, subreddits=1)
                 except Exception:
@@ -1118,8 +1192,8 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                 # mark for async metadata fetch
                 discovered.add(sname)
             else:
-                # Log at debug level for already-known subreddits to reduce spam
-                logger.debug(f"Subreddit encountered: /r/{sname}")
+                # Log at debug level for already-known entities to reduce spam
+                logger.debug(f"{'User' if is_user else 'Subreddit'} encountered: {entity_label}")
                 # Always refresh metadata on discovery (schedule for immediate update)
                 try:
                     discovered.add(sname)
@@ -1137,19 +1211,19 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                         session.add(sub)
                         session.commit()
                         updated = True
-                # Only log detailed mention info for existing subreddits (not newly discovered ones)
+                # Only log detailed mention info for existing entities (not newly discovered ones)
                 if not is_new_subreddit:
                     try:
                         if updated:
-                            logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - first_mentioned updated from {format_ts(old_val)} to {format_ts(sub.first_mentioned)}")
+                            logger.info(f"Known {'user' if is_user else 'subreddit'} mentioned: {entity_label} (comment {c.get('id')}) - first_mentioned updated from {format_ts(old_val)} to {format_ts(sub.first_mentioned)}")
                         else:
-                            logger.info(f"Known subreddit mentioned: /r/{sname} (comment {c.get('id')}) - no change to first_mentioned ({format_ts(sub.first_mentioned)})")
+                            logger.info(f"Known {'user' if is_user else 'subreddit'} mentioned: {entity_label} (comment {c.get('id')}) - no change to first_mentioned ({format_ts(sub.first_mentioned)})")
                     except Exception:
                         # logging should not block processing
-                        logger.debug(f"Mention processed for /r/{sname} (comment {c.get('id')})")
+                        logger.debug(f"Mention processed for {entity_label} (comment {c.get('id')})")
             except Exception:
                 session.rollback()
-                logger.exception(f"Error updating first_mentioned for /r/{sname}")
+                logger.exception(f"Error updating first_mentioned for {entity_label}")
 
             # Insert mention only if it doesn't already exist
             # Check both: same comment shouldn't mention same subreddit twice
@@ -1178,16 +1252,16 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
                     )
                     session.add(mention)
                     session.commit()
-                    logger.debug(f"Inserted mention: /r/{sname} by {cm.username} in comment {cm.reddit_comment_id}")
+                    logger.debug(f"Inserted mention: {entity_label} by {cm.username} in comment {cm.reddit_comment_id}")
                     try:
                         increment_analytics(session, mentions=1)
                     except Exception:
                         logger.debug('Failed to increment analytics for mention')
                 else:
-                    logger.debug(f"Skipped duplicate mention: /r/{sname} comment {cm.reddit_comment_id}")
+                    logger.debug(f"Skipped duplicate mention: {entity_label} comment {cm.reddit_comment_id}")
             except Exception as e:
                 session.rollback()
-                logger.error(f"Error inserting mention for /r/{sname}: {e}")
+                logger.error(f"Error inserting mention for {entity_label}: {e}")
 
     # Process edited comments: update stored body and extract any newly-added subreddit mentions
     for cm, c in edited:
@@ -1207,21 +1281,30 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
             if not subnames:
                 continue
 
-            for sname, (raw_text, context) in subnames.items():
+            for sname, (raw_text, context, is_user) in subnames.items():
                 # Skip ignored subreddits (configured via database)
-                if sname in ignored_subreddits:
+                # Only apply ignore list to actual subreddits, not user profiles
+                if not is_user and sname in ignored_subreddits:
                     continue
-                # get or create subreddit
+                
+                # Format display name based on type
+                if is_user:
+                    username = sname[2:] if sname.startswith('u_') else sname
+                    entity_label = f"/u/{username}"
+                else:
+                    entity_label = f"/r/{sname}"
+                
+                # get or create subreddit (stores both subreddits and user profiles)
                 sub = session.query(models.Subreddit).filter_by(name=sname).first()
                 if not sub:
                     sub = models.Subreddit(name=sname)
                     session.add(sub)
                     session.commit()
-                    logger.info(f"New subreddit discovered (edited comment): /r/{sname}")
+                    logger.info(f"New {'user' if is_user else 'subreddit'} discovered (edited comment): {entity_label}")
                     try:
                         increment_analytics(session, subreddits=1)
                     except Exception:
-                        logger.debug('Failed to increment analytics for new subreddit')
+                        logger.debug(f"Failed to increment analytics for new {'user' if is_user else 'subreddit'}")
                     discovered.add(sname)
                 else:
                     try:
@@ -1311,6 +1394,15 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
     # Always attempt to refresh metadata when called. This scanner configuration
     # updates subreddit metadata immediately after discovery, so do not rely on
     # any time-based caching logic here.
+    
+    # Determine display label for logging
+    is_user = is_user_profile(sub.name)
+    if is_user:
+        username = sub.name[2:] if sub.name.startswith('u_') else sub.name
+        entity_label = f"/u/{username}"
+    else:
+        entity_label = f"/r/{sub.name}"
+    
     try:
         r = fetch_sub_about(sub.name)
         if r.status_code == 200:
@@ -1406,9 +1498,9 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
             if not sub.is_banned:
                 sub.is_banned = False
             try:
-                logger.info(f"Updated metadata for /r/{sub.name}: display_name='{sub.display_name}', subscribers={sub.subscribers}")
+                logger.info(f"Updated metadata for {entity_label}: display_name='{sub.display_name}', subscribers={sub.subscribers}")
             except Exception:
-                logger.debug(f"Metadata updated for /r/{sub.name} (logging failed)")
+                logger.debug(f"Metadata updated for {entity_label} (logging failed)")
         elif 300 <= r.status_code < 400:
             # treat redirects as 'not found' for our purposes
             sub.subreddit_found = False
@@ -1420,7 +1512,7 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
             except Exception:
                 pass
             try:
-                logger.info(f"/r/{sub.name} returned redirect ({r.status_code}); marked not_found")
+                logger.info(f"{entity_label} returned redirect ({r.status_code}); marked not_found")
             except Exception:
                 pass
         elif r.status_code in (403, 404):
@@ -1440,7 +1532,7 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
             except Exception:
                 pass
             try:
-                logger.info(f"/r/{sub.name} returned {r.status_code}; is_banned={sub.is_banned}, subreddit_found={sub.subreddit_found}")
+                logger.info(f"{entity_label} returned {r.status_code}; is_banned={sub.is_banned}, subreddit_found={sub.subreddit_found}")
             except Exception:
                 pass
         elif r.status_code == 429:
@@ -1460,17 +1552,17 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
                     sub.retry_priority = int(sub.retry_priority or 0) + 1
                 except Exception:
                     sub.retry_priority = 1
-                logger.warning(f"/r/{sub.name} rate-limited; scheduling next_retry_at={sub.next_retry_at} (Retry-After={ra})")
+                logger.warning(f"{entity_label} rate-limited; scheduling next_retry_at={sub.next_retry_at} (Retry-After={ra})")
             except Exception:
-                logger.exception(f"Failed to schedule retry for /r/{sub.name} after 429")
+                logger.exception(f"Failed to schedule retry for {entity_label} after 429")
         else:
-            logger.warning(f"Unexpected status {r.status_code} for /r/{sub.name}")
+            logger.warning(f"Unexpected status {r.status_code} for {entity_label}")
             try:
-                logger.info(f"/r/{sub.name} unexpected status {r.status_code}")
+                logger.info(f"{entity_label} unexpected status {r.status_code}")
             except Exception:
                 pass
     except Exception as e:
-        logger.exception(f"Error fetching about for /r/{sub.name}: {e}")
+        logger.exception(f"Error fetching about for {entity_label}: {e}")
     finally:
         try:
             # Record when we last attempted to check this subreddit so idle
@@ -1482,7 +1574,7 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
         try:
             session.commit()
             try:
-                logger.info(f"Recorded last_checked and committed metadata for /r/{sub.name}")
+                logger.info(f"Recorded last_checked and committed metadata for {entity_label}")
             except Exception:
                 pass
         except Exception:
@@ -1723,16 +1815,24 @@ def check_scan_subreddits_availability():
                 func.lower(models.Subreddit.name) == subname.lower()
             ).first()
             
+            # Determine if this is a user profile for proper display
+            is_user = is_user_profile(subname)
+            if is_user:
+                username = subname[2:] if subname.startswith('u_') else subname
+                entity_label = f"/u/{username}"
+            else:
+                entity_label = f"/r/{subname}"
+            
             if not sub:
                 # Create new subreddit record
-                logger.info(f"Scan subreddit /r/{subname} not in database, creating and fetching metadata...")
+                logger.info(f"Scan {'user' if is_user else 'subreddit'} {entity_label} not in database, creating and fetching metadata...")
                 sub = models.Subreddit(name=subname.lower())
                 session.add(sub)
                 session.flush()
             
             # Check if we need to fetch/update metadata
             if sub.title is None or sub.subreddit_found is None:
-                logger.info(f"Fetching metadata for scan subreddit /r/{subname}...")
+                logger.info(f"Fetching metadata for scan {'user' if is_user else 'subreddit'} {entity_label}...")
                 if distributed_rate_limiter:
                     distributed_rate_limiter.wait_if_needed()
                 else:
@@ -1749,19 +1849,19 @@ def check_scan_subreddits_availability():
                     session.commit()
                 except Exception:
                     session.rollback()
-                    logger.exception(f"Failed to commit metadata for /r/{subname}")
+                    logger.exception(f"Failed to commit metadata for {entity_label}")
             
             # Check availability
             if sub.is_banned or sub.subreddit_found == False:
                 status = "banned" if sub.is_banned else "not found"
-                unavailable.append(f"/r/{subname} ({status})")
-                logger.warning(f"Scan subreddit /r/{subname} is {status}!")
+                unavailable.append(f"{entity_label} ({status})")
+                logger.warning(f"Scan {'user' if is_user else 'subreddit'} {entity_label} is {status}!")
         
         if unavailable:
-            logger.error(f"WARNING: {len(unavailable)} scan subreddit(s) are unavailable: {', '.join(unavailable)}")
-            logger.error("Scanner will continue but may not discover new mentions from these subreddits.")
+            logger.error(f"WARNING: {len(unavailable)} scan entity/entities are unavailable: {', '.join(unavailable)}")
+            logger.error("Scanner will continue but may not discover new mentions from these entities.")
         else:
-            logger.info(f"All {len(scan_configs)} scan subreddits are available.")
+            logger.info(f"All {len(scan_configs)} scan entities (subreddits/users) are available.")
 
 
 def main_loop():
@@ -1808,6 +1908,15 @@ def main_loop():
                     for subname, config in scan_configs.items():
                         allowed_users = config['allowed_users']
                         nsfw_only = config['nsfw_only']
+                        
+                        # Determine display label for this entity
+                        is_user = is_user_profile(subname)
+                        if is_user:
+                            username = subname[2:] if subname.startswith('u_') else subname
+                            entity_label = f"/u/{username}"
+                        else:
+                            entity_label = f"/r/{subname}"
+                        
                         subreddit_processed_count = 0  # Track posts processed for this specific subreddit
                         after_sub = None
                         while True:
@@ -1823,18 +1932,18 @@ def main_loop():
                                 error_str = str(e)
                                 error_type = type(e).__name__
                                 if '429' in error_str:
-                                    logger.warning(f"Rate limited on /r/{subname}: {error_type}: {error_str} - retrying after wait")
+                                    logger.warning(f"Rate limited on {entity_label}: {error_type}: {error_str} - retrying after wait")
                                     # Retry the same subreddit (continue to next iteration of while loop)
                                     continue
                                 else:
-                                    logger.warning(f"Exception fetching /r/{subname} (type={error_type}): {error_str}")
-                                    logger.exception(f"Full traceback for /r/{subname}")
+                                    logger.warning(f"Exception fetching {entity_label} (type={error_type}): {error_str}")
+                                    logger.exception(f"Full traceback for {entity_label}")
                                 break
                             children = data.get('data', {}).get('children', [])
                             if not children:
                                 break
                             if not after_sub:
-                                logger.info(f"Scanning new posts from /r/{subname}")
+                                logger.info(f"Scanning new posts from {entity_label}")
                             for p in children:
                                 pdata = p.get('data', {})
                                 
@@ -1855,7 +1964,7 @@ def main_loop():
                                 if discovered:
                                     discovered_overall.update(discovered)
                                 if TEST_MAX_POSTS_PER_SUBREDDIT and subreddit_processed_count >= TEST_MAX_POSTS_PER_SUBREDDIT:
-                                    logger.info(f"Reached TEST_MAX_POSTS_PER_SUBREDDIT={TEST_MAX_POSTS_PER_SUBREDDIT} for /r/{subname}, moving to next subreddit.")
+                                    logger.info(f"Reached TEST_MAX_POSTS_PER_SUBREDDIT={TEST_MAX_POSTS_PER_SUBREDDIT} for {entity_label}, moving to next subreddit.")
                                     break
                             after_sub = data.get('data', {}).get('after')
                             # Stop pagination if we've hit the per-subreddit limit or no more pages
