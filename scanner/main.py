@@ -407,11 +407,13 @@ def startup_metadata_prefetch():
         with Session(engine) as session:
             from sqlalchemy import or_
             now = datetime.utcnow()
+            from sqlalchemy import not_
             missing_q = session.query(models.Subreddit).filter(
                 or_(models.Subreddit.display_name == None, models.Subreddit.display_name == ''),
                 or_(models.Subreddit.title == None, models.Subreddit.title == ''),
                 or_(models.Subreddit.description == None, models.Subreddit.description == ''),
                 models.Subreddit.subscribers == None,
+                not_(models.Subreddit.name.ilike('u\_%'))
             )
             # Avoid rows scheduled for a future retry
             try:
