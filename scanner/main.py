@@ -866,6 +866,9 @@ def extract_subreddits_from_text(text: str):
     results = {}
     for m in RE_SUB.findall(text or ''):
         nm = normalize(m)
+        # Skip user accounts (e.g., /r/u_username) - these are not subreddits
+        if nm.startswith('u_'):
+            continue
         if 3 <= len(nm) <= 21 and nm not in ('all','random'):
             # Extract context around this mention (±50 chars)
             match_idx = (text or '').lower().find(m.lower())
