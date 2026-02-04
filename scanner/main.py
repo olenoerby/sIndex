@@ -1446,25 +1446,36 @@ def update_subreddit_metadata(session: Session, sub: models.Subreddit):
 def refresh_metadata_phase(duration_seconds):
     """
     Run metadata refresh for up to duration_seconds.
-    Priority 1: Subreddits with NO metadata (title is null), ordered by first_mentioned (oldest first)
-    Priority 2: Subreddits with metadata older than 24 hours, ordered by last_checked (oldest first)
-    Priority 3: Subreddits marked as not found, re-checked every 7 days (they may have been created since)
+    Priority 1: Subreddits NEVER scanned (last_checked is null), ordered by first_mentioned (oldest first)
+    Priority 2: Subreddits missing ANY metadata (title, subscribers, or description), ordered by first_mentioned (oldest first)
+    Priority 3: Subreddits with stale metadata (>24h old), ordered by last_checked (oldest first)
+    Priority 4: Not-found subreddits re-checked every 7 days (they may have been created since)
     Note: Banned subreddits are never re-checked as bans are permanent.
     Updates last_checked timestamp after each refresh.
     """
     logger.info(f"=== Starting Metadata Refresh Phase ({duration_seconds} seconds) ===")
-    logger.info("Priority order: 1) Subreddits without metadata (oldest first), 2) Stale metadata >24h old, 3) Not-found subreddits every 7 days")
+    logger.info("Priority: 1) Never scanned, 2) Missing any metadata, 3) Stale metadata >24h, 4) Not-found subreddits every 7d")
     
-    # Count subreddits missing metadata at start
+    # Count subreddits in each priority at start
     with Session(engine) as session:
         cutoff_24h = datetime.utcnow() - timedelta(hours=24)
-        missing_metadata_count = session.query(models.Subreddit).filter(
-            models.Subreddit.title == None,
+        
+        never_scanned = session.query(models.Subreddit).filter(
+            models.Subreddit.last_checked == None,
+            models.Subreddit.is_banned == False,
+            models.Subreddit.subreddit_found != False
+        ).count()
+        
+        missing_metadata = session.query(models.Subreddit).filter(
+            models.Subreddit.last_checked != None,
             models.Subreddit.is_banned == False,
             models.Subreddit.subreddit_found != False,
-            (models.Subreddit.last_checked == None) | (models.Subreddit.last_checked < cutoff_24h)
+            (models.Subreddit.title == None) | 
+            (models.Subreddit.subscribers_count == None) | 
+            (models.Subreddit.public_description == None)
         ).count()
-        logger.info(f"Subreddits missing metadata: {missing_metadata_count}")
+        
+        logger.info(f"Never scanned: {never_scanned}, Missing metadata: {missing_metadata}")
     
     start_time = time.time()
     end_time = start_time + duration_seconds
@@ -1474,37 +1485,52 @@ def refresh_metadata_phase(duration_seconds):
         with Session(engine) as session:
             cutoff_24h = datetime.utcnow() - timedelta(hours=24)
             
-            # Priority 1: Find one subreddit with NO metadata (oldest first_mentioned first)
-            # Exclude banned subreddits (permanent) and not-found subreddits (handled in Priority 3)
-            # Only retry if never checked OR last checked >24h ago (prevents hammering failed fetches)
+            # Priority 1: Subreddits NEVER scanned (last_checked is null)
+            # Ordered by first_mentioned (oldest discoveries first)
             subreddit_to_refresh = session.query(models.Subreddit).filter(
-                models.Subreddit.title == None,
+                models.Subreddit.last_checked == None,
                 models.Subreddit.is_banned == False,
-                models.Subreddit.subreddit_found != False,
-                (models.Subreddit.last_checked == None) | (models.Subreddit.last_checked < cutoff_24h)
+                models.Subreddit.subreddit_found != False
             ).order_by(models.Subreddit.first_mentioned.asc()).first()
             
             priority_level = None
             priority_desc = ""
             if subreddit_to_refresh:
                 priority_level = 1
-                priority_desc = "No metadata"
+                priority_desc = "Never scanned"
             
-            # Priority 2: If no missing metadata, find subreddit with stale metadata (>24h old)
-            # Only for subreddits that exist (subreddit_found != False)
+            # Priority 2: Subreddits missing ANY metadata (title, subscribers_count, or public_description)
+            # Even if recently checked - we want complete metadata for all subreddits
+            if not subreddit_to_refresh:
+                subreddit_to_refresh = session.query(models.Subreddit).filter(
+                    models.Subreddit.last_checked != None,
+                    models.Subreddit.is_banned == False,
+                    models.Subreddit.subreddit_found != False,
+                    (models.Subreddit.title == None) | 
+                    (models.Subreddit.subscribers_count == None) | 
+                    (models.Subreddit.public_description == None)
+                ).order_by(models.Subreddit.first_mentioned.asc()).first()
+                if subreddit_to_refresh:
+                    priority_level = 2
+                    priority_desc = "Missing metadata"
+            
+            # Priority 3: Subreddits with stale metadata (>24h old)
+            # Only for subreddits that exist and have complete metadata
             if not subreddit_to_refresh:
                 subreddit_to_refresh = session.query(models.Subreddit).filter(
                     models.Subreddit.title != None,
+                    models.Subreddit.subscribers_count != None,
+                    models.Subreddit.public_description != None,
                     models.Subreddit.last_checked != None,
                     models.Subreddit.last_checked < cutoff_24h,
                     models.Subreddit.is_banned == False,
                     models.Subreddit.subreddit_found != False
                 ).order_by(models.Subreddit.last_checked.asc()).first()
                 if subreddit_to_refresh:
-                    priority_level = 2
+                    priority_level = 3
                     priority_desc = "Stale metadata >24h"
             
-            # Priority 3: Re-check "not found" subreddits every 7 days (they may have been created)
+            # Priority 4: Re-check "not found" subreddits every 7 days (they may have been created)
             # Banned subreddits are never re-checked as bans are permanent
             if not subreddit_to_refresh:
                 cutoff_7d = datetime.utcnow() - timedelta(days=7)
@@ -1515,7 +1541,7 @@ def refresh_metadata_phase(duration_seconds):
                     models.Subreddit.last_checked < cutoff_7d
                 ).order_by(models.Subreddit.last_checked.asc()).first()
                 if subreddit_to_refresh:
-                    priority_level = 3
+                    priority_level = 4
                     priority_desc = "Not found recheck"
             
             # If no subreddits need refresh, we're done
@@ -1526,7 +1552,28 @@ def refresh_metadata_phase(duration_seconds):
             # Refresh this subreddit's metadata
             sub_name = subreddit_to_refresh.name
             priority_msg = f" [Priority {priority_level}: {priority_desc}]" if priority_level else ""
-            logger.info(f"Refreshing metadata for /r/{sub_name}{priority_msg} ({refreshed_count + 1} processed)")
+            
+            # Show remaining counts for Priority 1 and 2
+            remaining_msg = ""
+            if priority_level == 1:
+                remaining_count = session.query(models.Subreddit).filter(
+                    models.Subreddit.last_checked == None,
+                    models.Subreddit.is_banned == False,
+                    models.Subreddit.subreddit_found != False
+                ).count()
+                remaining_msg = f" [{remaining_count} never scanned remaining]"
+            elif priority_level == 2:
+                remaining_count = session.query(models.Subreddit).filter(
+                    models.Subreddit.last_checked != None,
+                    models.Subreddit.is_banned == False,
+                    models.Subreddit.subreddit_found != False,
+                    (models.Subreddit.title == None) | 
+                    (models.Subreddit.subscribers_count == None) | 
+                    (models.Subreddit.public_description == None)
+                ).count()
+                remaining_msg = f" [{remaining_count} missing metadata remaining]"
+            
+            logger.info(f"Refreshing metadata for /r/{sub_name}{priority_msg}{remaining_msg} ({refreshed_count + 1} processed)")
             
             # Use the rate limiter before making the API call
             if distributed_rate_limiter:
@@ -1553,7 +1600,29 @@ def refresh_metadata_phase(duration_seconds):
                 logger.exception(f"Failed to commit metadata for /r/{sub_name}")
     
     elapsed = time.time() - start_time
-    logger.info(f"=== Metadata Refresh Phase Complete: {refreshed_count} subreddits refreshed in {elapsed/3600:.2f} hours ===")
+    
+    # Final counts for Priority 1 and 2
+    with Session(engine) as session:
+        final_never_scanned = session.query(models.Subreddit).filter(
+            models.Subreddit.last_checked == None,
+            models.Subreddit.is_banned == False,
+            models.Subreddit.subreddit_found != False
+        ).count()
+        
+        final_missing = session.query(models.Subreddit).filter(
+            models.Subreddit.last_checked != None,
+            models.Subreddit.is_banned == False,
+            models.Subreddit.subreddit_found != False,
+            (models.Subreddit.title == None) | 
+            (models.Subreddit.subscribers_count == None) | 
+            (models.Subreddit.public_description == None)
+        ).count()
+        
+        logger.info(f"=== Metadata Refresh Phase Complete: {refreshed_count} subreddits refreshed in {elapsed/3600:.2f} hours ===")
+        if final_never_scanned > 0 or final_missing > 0:
+            logger.info(f"Remaining: {final_never_scanned} never scanned, {final_missing} missing metadata (will be prioritized in next refresh)")
+        else:
+            logger.info("All subreddits scanned with complete metadata!")
 
 
 def check_scan_subreddits_availability():
