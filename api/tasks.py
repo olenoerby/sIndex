@@ -11,8 +11,9 @@ from api.distributed_rate_limiter import DistributedRateLimiter
 
 # Initialize distributed rate limiter (best-effort)
 try:
-    API_RATE_DELAY_SECONDS = float(os.getenv('API_RATE_DELAY_SECONDS', os.getenv('API_RATE_DELAY', '6.5')))
     API_MAX_CALLS_MINUTE = int(os.getenv('API_MAX_CALLS_MINUTE', os.getenv('API_MAX_CALLS_MIN', '30')))
+    # Calculate minimum delay from max calls per minute
+    API_RATE_DELAY_SECONDS = 60.0 / API_MAX_CALLS_MINUTE
     distributed_rate_limiter = DistributedRateLimiter(redis_url=REDIS_URL, min_delay_seconds=API_RATE_DELAY_SECONDS, max_calls_per_minute=API_MAX_CALLS_MINUTE)
     distributed_rate_limiter.set_container_name('api_tasks')
 except Exception:

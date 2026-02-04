@@ -45,7 +45,6 @@ services:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-pineapple}:${POSTGRES_PASSWORD:-pineapple}@db:5432/${POSTGRES_DB:-pineapple}
       REDDIT_USER: ${REDDIT_USER:-WeirdPineapple}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      API_RATE_DELAY_SECONDS: ${API_RATE_DELAY_SECONDS:-6.5}
       API_MAX_CALLS_MINUTE: ${API_MAX_CALLS_MINUTE:-10}
       IGNORE_SUBREDDITS: ${IGNORE_SUBREDDITS:-wowthissubexists,sneakpeekbot}
       SKIP_RECENTLY_SCANNED_HOURS: ${SKIP_RECENTLY_SCANNED_HOURS:-0}

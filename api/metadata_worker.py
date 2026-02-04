@@ -25,8 +25,9 @@ QUEUE_NAME = 'metadata_refresh_queue'
 POLL_INTERVAL = 1.0  # seconds
 
 # Load API rate limit settings (must match scanner settings)
-API_RATE_DELAY_SECONDS = float(os.getenv('API_RATE_DELAY_SECONDS', '7'))
 API_MAX_CALLS_MINUTE = int(os.getenv('API_MAX_CALLS_MINUTE', '8'))
+# Calculate minimum delay from max calls per minute
+API_RATE_DELAY_SECONDS = 60.0 / API_MAX_CALLS_MINUTE
 
 # Initialize distributed rate limiter for coordination with scanner
 try:

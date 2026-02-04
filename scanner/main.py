@@ -47,8 +47,9 @@ if not logger.handlers:
 logger.propagate = False
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql+psycopg2://pineapple:pineapple@db:5432/pineapple')
-API_RATE_DELAY_SECONDS = float(os.getenv('API_RATE_DELAY_SECONDS', '6.5'))
 API_MAX_CALLS_MINUTE = int(os.getenv('API_MAX_CALLS_MINUTE', '30'))
+# Calculate minimum delay from max calls per minute (60 seconds / max calls)
+API_RATE_DELAY_SECONDS = 60.0 / API_MAX_CALLS_MINUTE
 # METADATA_REFRESH_SECONDS: time in seconds to spend refreshing metadata
 METADATA_REFRESH_SECONDS = float(os.getenv('METADATA_REFRESH_SECONDS', '7200'))
 # If true, scanner starts by refreshing metadata before scanning for new mentions
@@ -118,7 +119,7 @@ class RateLimiter:
     
     Enforces TWO constraints:
     1. Per-minute limit: max_calls_per_minute over rolling 60-second window
-    2. Minimum delay: API_RATE_DELAY_SECONDS seconds between ANY consecutive calls
+    2. Minimum delay: Calculated as 60/max_calls_per_minute between consecutive calls
     """
     
     def __init__(self, max_calls_per_minute, min_delay_seconds=None):
