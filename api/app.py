@@ -10,7 +10,7 @@ from functools import wraps
 from api.distributed_rate_limiter import DistributedRateLimiter
 
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, select, desc, func, text, literal_column, or_
@@ -157,28 +157,20 @@ def fetch_sub_about(name: str):
 
     return r
 @app.post("/subreddits/{name}/refresh")
-def refresh_subreddit(name: str, api_key: Optional[str] = Query(None)):
+def refresh_subreddit(name: str, x_api_key: Optional[str] = Header(None)):
     """Enqueue a background job to refresh subreddit metadata.
 
-    Requires `X-API-Key` header or `api_key` query param when `API_KEY` is set in the environment.
+    Requires `X-API-Key` header when `API_KEY` is set in the environment.
     Enforces a per-subreddit cooldown and a simple global rate limit using Redis.
     Returns 202 Accepted with job info when queued.
     """
     # API key check: allow requests when no API_KEY configured
     ENV_API_KEY = os.getenv('API_KEY')
-    header_key = None
-    try:
-        # FastAPI: Query params come via function args; header check via environ fallback
-        from fastapi import Request
-        # attempt to read header if available (not ideal here, but Query fallback provided)
-    except Exception:
-        pass
-
-    provided_key = api_key or os.getenv('HTTP_X_API_KEY') or ''
-    # If API key is configured, require it
+    
+    # If API key is configured, require it via header only
     is_authenticated = False
     if ENV_API_KEY:
-        if not provided_key or provided_key != ENV_API_KEY:
+        if not x_api_key or x_api_key != ENV_API_KEY:
             raise HTTPException(status_code=403, detail='Invalid or missing API key')
         is_authenticated = True
 
@@ -228,18 +220,17 @@ def refresh_subreddit(name: str, api_key: Optional[str] = Query(None)):
 
 
 @app.post("/subreddits/refresh-pending")
-def refresh_pending_subreddits(api_key: Optional[str] = Query(None)):
+def refresh_pending_subreddits(x_api_key: Optional[str] = Header(None)):
     """Enqueue refresh jobs for all pending subreddits (title IS NULL).
     
-    Requires API key authentication.
+    Requires API key authentication via X-API-Key header.
     Returns count of jobs enqueued.
     """
     # API key check
     ENV_API_KEY = os.getenv('API_KEY')
-    provided_key = api_key or os.getenv('HTTP_X_API_KEY') or ''
     
     if ENV_API_KEY:
-        if not provided_key or provided_key != ENV_API_KEY:
+        if not x_api_key or x_api_key != ENV_API_KEY:
             raise HTTPException(status_code=403, detail='Invalid or missing API key')
     
     REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
@@ -350,9 +341,32 @@ def list_subreddits(
 ):
     # enforce sensible limits to avoid huge responses
     max_per = 500
-    per_page = min(max_per, max(1, int(per_page)))
-    page = max(1, int(page))
+    try:
+        per_page = min(max_per, max(1, int(per_page)))
+        page = max(1, int(page))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid page or per_page parameter")
+    
     offset = (page - 1) * per_page
+    
+    # Validate numeric filter parameters
+    try:
+        if min_mentions is not None:
+            min_mentions = max(0, int(min_mentions))
+        if max_mentions is not None:
+            max_mentions = max(0, min(1000000, int(max_mentions)))
+        if min_subscribers is not None:
+            min_subscribers = max(0, int(min_subscribers))
+        if max_subscribers is not None:
+            max_subscribers = max(0, min(1000000000, int(max_subscribers)))
+        if first_mentioned_days is not None:
+            first_mentioned_days = max(1, min(3650, int(first_mentioned_days)))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid numeric filter parameter: {str(e)}")
+    
+    # Validate and sanitize random_seed if provided
+    if random_seed:
+        random_seed = str(random_seed)[:100]  # Limit to 100 chars
     
     # Debug logging for filter parameters
     api_logger.debug(f"Filter params: show_available={show_available}, show_banned={show_banned}, show_pending={show_pending}, show_nsfw={show_nsfw}, show_non_nsfw={show_non_nsfw}")
@@ -548,7 +562,10 @@ def list_subreddits(
                     # otherwise fall back to non-deterministic func.random().
                     if random_seed:
                         try:
-                            subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, literal_column("'" + str(random_seed).replace("'","''") + "'"))))
+                            # Use bind parameter to prevent SQL injection
+                            from sqlalchemy import bindparam
+                            seed_param = bindparam('seed_value', value=str(random_seed)[:100])  # limit length
+                            subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, seed_param)))
                         except Exception:
                             subq = subq.order_by(func.random())
                     else:
@@ -862,7 +879,10 @@ def random_sample(n: int = 10, seed: Optional[str] = None):
             .group_by(models.Subreddit.id)
         try:
             if seed:
-                subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, literal_column("'" + str(seed).replace("'","''") + "'"))))
+                # Use bind parameter to prevent SQL injection
+                from sqlalchemy import bindparam
+                seed_param = bindparam('seed_value', value=str(seed)[:100])  # limit length
+                subq = subq.order_by(func.md5(func.concat(models.Subreddit.name, seed_param)))
             else:
                 subq = subq.order_by(func.random())
         except Exception:

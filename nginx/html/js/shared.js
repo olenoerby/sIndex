@@ -25,11 +25,16 @@ function formatDate(dateStr) {
   return `${Math.floor(days / 365)} years ago`;
 }
 
-// Decode HTML entities
+// Decode HTML entities safely without XSS risk
 function decodeHtml(html) {
+  if (!html) return '';
   const txt = document.createElement('textarea');
-  txt.innerHTML = html;
-  return txt.value;
+  // Use textContent instead of innerHTML to prevent XSS
+  txt.textContent = html;
+  // Create a temporary div to decode entities
+  const div = document.createElement('div');
+  div.innerHTML = txt.textContent;
+  return div.textContent || div.innerText || '';
 }
 
 // Escape HTML for safe display
