@@ -1802,52 +1802,52 @@ def check_scan_subreddits_availability():
         unavailable = []
         
         for subname in scan_configs.keys():
-            # Get or create subreddit record
-            sub = session.query(models.Subreddit).filter(
-                func.lower(models.Subreddit.name) == subname.lower()
-            ).first()
-            
-            # Determine if this is a user profile for proper display
             is_user = is_user_profile(subname)
             if is_user:
                 username = subname[2:] if subname.startswith('u_') else subname
                 entity_label = f"/u/{username}"
+                # Do not create or update Subreddit rows for user profiles
+                logger.info(f"Skipping user profile scan config: {entity_label} (not a real subreddit)")
+                continue
             else:
                 entity_label = f"/r/{subname}"
-            
+
+            # Get or create subreddit record
+            sub = session.query(models.Subreddit).filter(
+                func.lower(models.Subreddit.name) == subname.lower()
+            ).first()
             if not sub:
-                # Create new subreddit record
-                logger.info(f"Scan {'user' if is_user else 'subreddit'} {entity_label} not in database, creating and fetching metadata...")
+                logger.info(f"Scan subreddit {entity_label} not in database, creating and fetching metadata...")
                 sub = models.Subreddit(name=subname.lower())
                 session.add(sub)
                 session.flush()
-            
+
             # Check if we need to fetch/update metadata
             if sub.title is None or sub.subreddit_found is None:
-                logger.info(f"Fetching metadata for scan {'user' if is_user else 'subreddit'} {entity_label}...")
+                logger.info(f"Fetching metadata for scan subreddit {entity_label}...")
                 if distributed_rate_limiter:
                     distributed_rate_limiter.wait_if_needed()
                 else:
                     rate_limiter.wait_if_needed()
-                
+
                 update_subreddit_metadata(session, sub)
-                
+
                 if distributed_rate_limiter:
                     distributed_rate_limiter.record_api_call()
                 else:
                     rate_limiter.record_call()
-                
+
                 try:
                     session.commit()
                 except Exception:
                     session.rollback()
                     logger.exception(f"Failed to commit metadata for {entity_label}")
-            
+
             # Check availability
             if sub.is_banned or sub.subreddit_found == False:
                 status = "banned" if sub.is_banned else "not found"
                 unavailable.append(f"{entity_label} ({status})")
-                logger.warning(f"Scan {'user' if is_user else 'subreddit'} {entity_label} is {status}!")
+                logger.warning(f"Scan subreddit {entity_label} is {status}!")
         
         if unavailable:
             logger.error(f"WARNING: {len(unavailable)} scan entity/entities are unavailable: {', '.join(unavailable)}")
