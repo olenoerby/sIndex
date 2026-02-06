@@ -1009,6 +1009,10 @@ def process_post(post_item, session: Session, source_subreddit_name: str = None,
     try:
         if source_subreddit_name:
             sname = normalize(source_subreddit_name)
+            # If the original name is a user profile, ensure prefix is u_
+            if source_subreddit_name.strip().lower().startswith(('u/', '/u/')):
+                if not sname.startswith('u_'):
+                    sname = 'u_' + sname.lstrip('_')
             if not is_user_profile(sname):
                 source_sub = session.query(models.Subreddit).filter_by(name=sname).first()
                 if not source_sub:
