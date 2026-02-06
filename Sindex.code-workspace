@@ -9,7 +9,8 @@
 			"docker compose": true,
 			"docker-compose": true,
 			"ssh": true,
-			"ForEach-Object": true
+			"ForEach-Object": true,
+			"&": true
 		}
 	}
 }
