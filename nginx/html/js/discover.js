@@ -158,4 +158,39 @@ initWithAgeGate(() => {
     const min_growth = mg ? parseFloat(mg.value) : currentData.growing.min_growth;
     loadFastestGrowing(currentData.growing.days || 30, min_recent, min_growth);
   }));
+
+  // Sync top-level defaults controls with section radios
+  function applyDefaultsToSection() {
+    const dmr = document.querySelector('input[name="default_min_recent"]:checked');
+    const dmg = document.querySelector('input[name="default_min_growth"]:checked');
+    if (dmr) {
+      const target = document.querySelector(`input[name="min_recent"][value="${dmr.value}"]`);
+      if (target) target.checked = true;
+    }
+    if (dmg) {
+      const targetg = document.querySelector(`input[name="min_growth"][value="${dmg.value}"]`);
+      if (targetg) targetg.checked = true;
+    }
+  }
+
+  // When defaults change, copy into section radios and reload
+  document.querySelectorAll('input[name="default_min_recent"]').forEach(r => r.addEventListener('change', () => {
+    applyDefaultsToSection();
+    const mg = document.querySelector('input[name="min_growth"]:checked');
+    const min_growth = mg ? parseFloat(mg.value) : currentData.growing.min_growth;
+    const mr = document.querySelector('input[name="min_recent"]:checked');
+    const min_recent = mr ? parseInt(mr.value) : currentData.growing.min_recent;
+    loadFastestGrowing(currentData.growing.days || 30, min_recent, min_growth);
+  }));
+  document.querySelectorAll('input[name="default_min_growth"]').forEach(r => r.addEventListener('change', () => {
+    applyDefaultsToSection();
+    const mr = document.querySelector('input[name="min_recent"]:checked');
+    const min_recent = mr ? parseInt(mr.value) : currentData.growing.min_recent;
+    const mg = document.querySelector('input[name="min_growth"]:checked');
+    const min_growth = mg ? parseFloat(mg.value) : currentData.growing.min_growth;
+    loadFastestGrowing(currentData.growing.days || 30, min_recent, min_growth);
+  }));
+
+  // Apply defaults initially so both control places match
+  applyDefaultsToSection();
 });

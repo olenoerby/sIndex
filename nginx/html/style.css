@@ -1041,6 +1041,49 @@ th.sticky {
   gap: 8px;
 }
 
+/* Radio group styling for compact controls */
+.radio-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+.radio-group .radio-label {
+  color: var(--muted);
+  font-size: 13px;
+  margin-right: 6px;
+  min-width: 74px;
+  text-align: right;
+}
+.radio-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.radio-group input[type="radio"] {
+  width: 14px;
+  height: 14px;
+}
+
+/* Smaller controls row for top-of-page defaults */
+.discover-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0 18px;
+}
+.discover-controls .radio-group label {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .time-btn {
   padding: 6px 12px;
   border: 1px solid var(--border);
