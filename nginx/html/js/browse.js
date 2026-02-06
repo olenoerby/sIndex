@@ -137,6 +137,8 @@ function buildApiUrl() {
   // Only show available subreddits by default
   params.append('show_available', 'true');
   params.append('show_banned', 'false');
+  // Exclude subreddits that are "pending" (missing metadata)
+  params.append('show_pending', 'false');
 
   return `/subreddits?${params.toString()}`;
 }
