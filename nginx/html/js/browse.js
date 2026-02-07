@@ -22,6 +22,8 @@ function savePrefs() {
       perPage
     };
     setCookie('sindex_browse_prefs', encodeURIComponent(JSON.stringify(prefs)), 365);
+    // Mirror the search query to a shared cookie so other pages can read it
+    try{ setCookie('sindex_search', encodeURIComponent(searchQuery || ''), 365); }catch(e){}
   } catch(e) { /* ignore */ }
 }
 
@@ -39,6 +41,13 @@ function loadPrefs() {
     if (prefs.currentPage) currentPage = Number(prefs.currentPage) || 1;
     if (prefs.perPage) perPage = Number(prefs.perPage) || 24;
   } catch(e) { /* ignore malformed cookie */ }
+  // If a shared search cookie exists, prefer it to populate the search field
+  try{
+    const sc = getCookie('sindex_search');
+    if(sc !== null && typeof sc !== 'undefined' && String(sc).length>0){
+      searchQuery = decodeURIComponent(sc);
+    }
+  }catch(e){}
 }
 
 // DOM elements
@@ -223,6 +232,7 @@ searchInput.addEventListener('input', (e) => {
   const hasQuery = newQuery.length > 0;
   searchQuery = newQuery;
   if (searchClear) searchClear.classList.toggle('hidden', !searchQuery);
+  try{ setCookie('sindex_search', encodeURIComponent(searchQuery || ''), 365); }catch(e){}
   
   // Auto-switch to alphabetical sort when searching (for relevance)
   if (hasQuery && !hadQuery) {

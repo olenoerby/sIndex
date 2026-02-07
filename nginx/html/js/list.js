@@ -35,6 +35,8 @@ function savePrefs(){
       perPage: perPage || 50
     };
     setCookie('sindex_prefs', encodeURIComponent(JSON.stringify(p)), 365);
+    // Mirror search query to a shared cookie so other pages can read it
+    try{ setCookie('sindex_search', encodeURIComponent(p.q || ''), 365); }catch(e){}
   }catch(e){ /* ignore */ }
 }
 
@@ -65,6 +67,14 @@ function loadPrefs(){
     if(prefs.perPage) perPage = Number(prefs.perPage) || perPage;
     if(prefs.randomOrder && Array.isArray(prefs.randomOrder)) randomOrder = prefs.randomOrder;
   }catch(e){ /* ignore malformed cookie */ }
+  // Prefer shared search cookie if present to populate the list search input
+  try{
+    const sc = getCookie('sindex_search');
+    if(sc !== null && typeof sc !== 'undefined' && String(sc).length>0){
+      const qEl = document.getElementById('q');
+      if(qEl){ qEl.value = decodeURIComponent(sc); }
+    }
+  }catch(e){}
 }
 
 function updateColumnVisibility(list){
@@ -498,6 +508,7 @@ if(qEl){
     try{ 
       if(clearQueryBtn) clearQueryBtn.classList.toggle('hidden', !(qEl.value && qEl.value.length>0)); 
     }catch(err){ console.error('Clear button error:', err); }
+    try{ setCookie('sindex_search', encodeURIComponent((qEl.value||'').trim()), 365); }catch(e){}
     try{
       debouncedLoadPage();
     }catch(err){ console.error('Search error:', err); }
@@ -507,6 +518,7 @@ if(clearQueryBtn){
   clearQueryBtn.addEventListener('click', ()=>{ 
     if(qEl) qEl.value = ''; 
     if(clearQueryBtn) clearQueryBtn.classList.add('hidden'); 
+    try{ setCookie('sindex_search', encodeURIComponent(''), 365); }catch(e){}
     try{ savePrefs(); }catch(e){} 
     loadPage(1); 
   });
