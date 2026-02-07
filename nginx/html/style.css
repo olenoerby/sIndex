@@ -1131,6 +1131,7 @@ th.sticky {
   gap: 12px;
   align-items: center;
   margin-top: 12px;
+  margin-bottom: 18px;
 }
 
 /* Ensure Fastest Growing control row always appears on its own full-width line
@@ -1141,6 +1142,7 @@ th.sticky {
   gap: 12px;
   align-items: center;
   margin-top: 12px;
+  margin-bottom: 18px;
   flex-wrap: wrap;
 }
 
