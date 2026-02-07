@@ -500,7 +500,7 @@ const clearQueryBtn = document.getElementById('clearQuery');
 if(qEl){
   qEl.addEventListener('input', (e)=>{
     try{ 
-      if(clearQueryBtn) clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'inline' : 'none'; 
+      if(clearQueryBtn) clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'block' : 'none'; 
     }catch(err){ console.error('Clear button error:', err); }
     try{
       debouncedLoadPage();
@@ -911,7 +911,7 @@ updateSortedHeader();
 // Ensure clear (X) button visibility reflects loaded query from prefs
 try{
   if(typeof qEl !== 'undefined' && qEl && typeof clearQueryBtn !== 'undefined' && clearQueryBtn){
-    clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'inline' : 'none';
+    clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'block' : 'none';
   }
 }catch(e){/* ignore */}
 
