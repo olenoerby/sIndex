@@ -149,11 +149,11 @@ async function loadSubreddits() {
   if (isLoading) return;
   
   isLoading = true;
-  subredditGrid.style.display = 'none';
-  statusMessage.style.display = 'block';
+  subredditGrid.classList.add('hidden');
+  statusMessage.classList.remove('hidden');
   statusMessage.innerHTML = `
     <div class="loading-spinner"></div>
-    <p style="margin-top:12px">Loading subreddits...</p>
+    <p class="mt-8">Loading subreddits...</p>
   `;
 
   try {
@@ -182,14 +182,14 @@ async function loadSubreddits() {
     
     if (subreddits.length === 0) {
       statusMessage.innerHTML = '<p>No subreddits found. Try adjusting your filters.</p>';
-      statusMessage.style.display = 'block';
-      subredditGrid.style.display = 'none';
+      statusMessage.classList.remove('hidden');
+      subredditGrid.classList.add('hidden');
     } else {
       subreddits.forEach(sub => {
         subredditGrid.appendChild(createSubredditCard(sub));
       });
-      statusMessage.style.display = 'none';
-      subredditGrid.style.display = 'grid';
+      statusMessage.classList.add('hidden');
+      subredditGrid.classList.remove('hidden');
     }
 
     // Update pagination
@@ -198,8 +198,8 @@ async function loadSubreddits() {
   } catch (error) {
     console.error('Error loading subreddits:', error);
     statusMessage.innerHTML = '<p>Error loading subreddits. Please try again.</p>';
-    statusMessage.style.display = 'block';
-    subredditGrid.style.display = 'none';
+    statusMessage.classList.remove('hidden');
+    subredditGrid.classList.add('hidden');
   } finally {
     isLoading = false;
     savePrefs();
@@ -222,7 +222,7 @@ searchInput.addEventListener('input', (e) => {
   const hadQuery = searchQuery.length > 0;
   const hasQuery = newQuery.length > 0;
   searchQuery = newQuery;
-  searchClear.style.display = searchQuery ? 'block' : 'none';
+  if (searchClear) searchClear.classList.toggle('hidden', !searchQuery);
   
   // Auto-switch to alphabetical sort when searching (for relevance)
   if (hasQuery && !hadQuery) {
@@ -252,7 +252,7 @@ searchClear.addEventListener('click', () => {
     sortBy.value = currentSort;
   }
   searchQuery = '';
-  searchClear.style.display = 'none';
+  if (searchClear) searchClear.classList.add('hidden');
   currentPage = 1;
   loadSubreddits();
 });
@@ -324,9 +324,9 @@ function initializePage() {
   
   // Apply preferences to UI
   if (sortBy) sortBy.value = currentSort;
-  if (searchInput) {
+    if (searchInput) {
     searchInput.value = searchQuery;
-    searchClear.style.display = searchQuery ? 'block' : 'none';
+    if (searchClear) searchClear.classList.toggle('hidden', !searchQuery);
   }
   
   // Set active filter UI (single button or chips)

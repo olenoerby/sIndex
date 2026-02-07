@@ -104,12 +104,12 @@ function showAgeGate(onConfirm) {
   box.appendChild(actions);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
-  document.body.style.overflow = 'hidden';
+  document.body.classList.add('no-scroll');
 
   confirmBtn.addEventListener('click', () => {
     try { setCookie('sindex_age_confirmed', '1', 365); } catch(e) {}
     overlay.remove();
-    document.body.style.overflow = '';
+    document.body.classList.remove('no-scroll');
     onConfirm();
   });
 

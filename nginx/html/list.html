@@ -33,7 +33,7 @@
   <div class="browse-container">
     <div class="browse-header small-title">
       <h1>
-        <a href="/" style="color:inherit;text-decoration:none">Ψ Advanced List</a>
+        <a href="/">Ψ Advanced List</a>
         <!-- <span id="headerSubCount" class="header-count">0 subreddits scanned</span> -->
       </h1>
     </div>
@@ -47,7 +47,7 @@
       </div>
 
         <div class="controls controls-top">
-          <div style="margin-right:auto" class="muted" id="loading"></div>
+          <div class="muted flex-spacer" id="loading"></div>
           <button id="filterBtn" class="btn btn-ghost">Filters & Options ▾</button>
           <button id="sortDir" class="btn">Sort: Desc</button>
           <button id="resetFilters" class="btn btn-ghost">Reset</button>
@@ -55,14 +55,14 @@
       </div>
         <!-- Filter popout: positioned relative to .controls (absolute placement) -->
         <div id="filterPop">
-          <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="pop-column">
             <!-- Options Section (moved to top for primary controls) -->
             <div>
-              <div style="font-weight:700;margin-bottom:8px;font-size:1.05rem">Display Options</div>
-              <table style="width:100%;border-collapse:collapse">
+              <div class="section-title">Display Options</div>
+              <table>
                 <tr>
-                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Sort by:</td>
-                  <td style="width:55%;padding:6px 4px"><select id="sortSelect" style="width:100%">
+                  <td>Sort by:</td>
+                  <td><select id="sortSelect">
                     <option value="mentions">Mentions</option>
                     <option value="subscribers">Subscribers</option>
                     <option value="active_users">Active users</option>
@@ -75,9 +75,9 @@
                   </select></td>
                 </tr>
                 <tr>
-                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Results per page:</td>
-                  <td style="width:55%;padding:6px 4px">
-                    <select id="perPageSelect" style="width:100%">
+                  <td>Results per page:</td>
+                  <td>
+                    <select id="perPageSelect">
                       <option value="25">25</option>
                       <option value="50">50</option>
                       <option value="100">100</option>
@@ -85,8 +85,8 @@
                   </td>
                 </tr>
                 <tr>
-                  <td style="width:45%;padding:6px 4px;vertical-align:middle;font-size:0.9rem">Link opens to:</td>
-                  <td style="width:55%;padding:6px 4px"><select id="listing" style="width:100%">
+                  <td>Link opens to:</td>
+                  <td><select id="listing">
                     <option value="" selected>Subreddit home</option>
                     <option value="hot">Hot</option>
                     <option value="new">New</option>
@@ -98,24 +98,24 @@
               </table>
             </div>
 
-            <div style="border-top:1px solid #e6eefc;padding-top:10px">
-              <div style="font-weight:700;margin-bottom:8px;font-size:1.05rem">Filters</div>
+            <div class="actions-sep">
+              <div class="section-title">Filters</div>
               
               <!-- Availability Filters -->
-              <div style="font-weight:600;margin-bottom:6px;font-size:0.95rem;color:var(--muted)">Availability</div>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showAvailable" type="checkbox" checked/> Show available subreddits</label>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showBanned" type="checkbox"/> Show unavailable/banned</label>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showPending" type="checkbox" checked/> Show pending metadata updates</label>
+              <div class="muted">Availability</div>
+              <label class="pop-label"><input id="showAvailable" type="checkbox" checked/> Show available subreddits</label>
+              <label class="pop-label"><input id="showBanned" type="checkbox"/> Show unavailable/banned</label>
+              <label class="pop-label"><input id="showPending" type="checkbox" checked/> Show pending metadata updates</label>
               
               <!-- Content Type Filters -->
-              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Content Type</div>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><input id="showNSFW" type="checkbox" checked/> Show NSFW</label>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><input id="showNonNSFW" type="checkbox" checked/> Show SFW (non-NSFW)</label>
+              <div class="muted mt-8">Content Type</div>
+              <label class="pop-label"><input id="showNSFW" type="checkbox" checked/> Show NSFW</label>
+              <label class="pop-label"><input id="showNonNSFW" type="checkbox" checked/> Show SFW (non-NSFW)</label>
               
               <!-- Discovery Date Filters -->
-              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Discovery Date</div>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <select id="firstMentionedPreset" style="width:100%">
+              <div class="muted mt-8">Discovery Date</div>
+              <label class="pop-label">
+                <select id="firstMentionedPreset">
                   <option value="" selected>All time</option>
                   <option value="7">New this week ⭐</option>
                   <option value="30">Last 30 days</option>
@@ -123,24 +123,24 @@
                   <option value="custom">Custom days...</option>
                 </select>
               </label>
-              <label id="customDaysLabel" style="display:none;justify-content:space-between;align-items:center;margin-bottom:10px">Custom days: <input id="customDays" type="number" placeholder="30" min="1" step="1" style="width:110px"/></label>
+              <label id="customDaysLabel" class="hidden pop-label">Custom days: <input id="customDays" type="number" placeholder="30" min="1" step="1" class="small-input"/></label>
               
               <!-- Numeric Range Filters -->
-              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Mentions Range</div>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:0.9rem">Minimum <input id="minMentions" type="number" placeholder="0" min="0" step="1" style="width:100px"/></label>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:0.9rem">Maximum <input id="maxMentions" type="number" placeholder="∞" min="1" step="1" style="width:100px"/></label>
+              <div class="muted mt-8">Mentions Range</div>
+              <label class="pop-label">Minimum <input id="minMentions" type="number" placeholder="0" min="0" step="1" class="small-input"/></label>
+              <label class="pop-label">Maximum <input id="maxMentions" type="number" placeholder="∞" min="1" step="1" class="small-input"/></label>
               
-              <div style="font-weight:600;margin-bottom:6px;margin-top:8px;font-size:0.95rem;color:var(--muted)">Subscribers Range</div>
-              <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:0.9rem">Minimum <input id="minSubscribers" type="number" placeholder="0" min="0" step="1" style="width:100px"/></label>
-              <label style="display:flex;justify-content:space-between;align-items:center;font-size:0.9rem">Maximum <input id="maxSubscribers" type="number" placeholder="∞" min="0" step="1" style="width:100px"/></label>
+              <div class="muted mt-8">Subscribers Range</div>
+              <label class="pop-label">Minimum <input id="minSubscribers" type="number" placeholder="0" min="0" step="1" class="small-input"/></label>
+              <label class="pop-label">Maximum <input id="maxSubscribers" type="number" placeholder="∞" min="0" step="1" class="small-input"/></label>
             </div>
 
             <!-- Action Buttons -->
-            <div style="display:flex;justify-content:space-between;margin-top:12px;gap:8px;border-top:1px solid #e6eefc;padding-top:12px">
-              <button id="showAll" class="btn btn-ghost" style="font-size:0.9rem">Show All</button>
-              <div style="display:flex;gap:8px">
-                <button id="resetFiltersPop" class="btn btn-ghost" style="font-size:0.9rem">Reset</button>
-                <button id="closeFilterPop" class="btn" style="font-size:0.9rem">Apply</button>
+            <div class="actions-row">
+              <button id="showAll" class="btn btn-ghost btn-small">Show All</button>
+              <div class="row-actions">
+                <button id="resetFiltersPop" class="btn btn-ghost btn-small">Reset</button>
+                <button id="closeFilterPop" class="btn btn-small">Apply</button>
               </div>
             </div>
           </div>
@@ -150,8 +150,8 @@
       </div>
 
       <div class="muted" id="count"></div>
-      <div class="muted" id="emptyHint" style="margin-top:8px"></div>
-      <div id="paginationControls" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;justify-content:center"></div>
+      <div class="muted" id="emptyHint" class="mt-8"></div>
+      <div id="paginationControls" class="pagination-controls"></div>
       <div class="table-wrap card table-card">
       <table id="tbl" class="table">
     <thead>
@@ -168,7 +168,7 @@
   </table>
   </div>
     </div>
-    <div id="paginationControlsBottom" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;justify-content:center"></div>
+    <div id="paginationControlsBottom" class="pagination-controls"></div>
     
     <!-- Floating About button underneath the table (bottom-right) -->
     <button id="explainBtn" class="about-fab" title="About" aria-label="About">?</button>

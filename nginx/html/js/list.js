@@ -73,9 +73,9 @@ function updateColumnVisibility(list){
     // for that column; this preserves stable table layout for users.
     const cols = ['title','subscribers','description','first_mentioned','last_checked'];
     cols.forEach(col => {
-      document.querySelectorAll('.col-' + col).forEach(el => el.style.display = '');
+      document.querySelectorAll('.col-' + col).forEach(el => el.classList.remove('hidden'));
       const th = document.querySelector('th.col-' + col);
-      if(th) th.style.display = '';
+      if(th) th.classList.remove('hidden');
     });
   }catch(e){ console.warn('updateColumnVisibility failed', e); }
 }
@@ -199,21 +199,19 @@ function renderPaginationControls(){
   const bottom = document.getElementById('paginationControlsBottom');
   if(!top && !bottom) return;
   if(paginationDisabled){
-    if(top) top.style.display = 'none';
-    if(bottom) bottom.style.display = 'none';
+    if(top) top.classList.add('hidden');
+    if(bottom) bottom.classList.add('hidden');
     return;
   } else {
-    if(top) top.style.display = 'flex';
-    if(bottom) bottom.style.display = 'flex';
+    if(top) top.classList.remove('hidden');
+    if(bottom) bottom.classList.remove('hidden');
   }
 
   const totalPages = Math.max(1, Math.ceil((filteredCount || 0) / perPage));
 
   function makeControls(){
-    const ctr = document.createElement('div');
-    ctr.style.display = 'flex';
-    ctr.style.gap = '8px';
-    ctr.style.alignItems = 'center';
+  const ctr = document.createElement('div');
+  ctr.className = 'pagination-row';
 
     const first = document.createElement('button'); first.className = 'btn btn-ghost'; first.textContent = '«'; first.setAttribute('aria-label','First page');
     first.disabled = currentPage <= 1;
@@ -227,8 +225,7 @@ function renderPaginationControls(){
     pageInput.type = 'number';
     pageInput.min = 1;
     pageInput.max = totalPages;
-    pageInput.style.width = '56px';
-    pageInput.className = 'muted';
+    pageInput.className = 'muted input-small';
     pageInput.value = String(currentPage);
     pageInput.addEventListener('change', ()=>{ 
       console.log('Page input change event fired! isLoadingPage=', isLoadingPage, 'Old currentPage:', currentPage, 'New input value:', pageInput.value); 
@@ -242,7 +239,7 @@ function renderPaginationControls(){
         pageInput.value = String(currentPage); 
       } 
     });
-    const pageTotal = document.createElement('span'); pageTotal.className = 'muted'; pageTotal.style.marginLeft = '6px'; pageTotal.textContent = '/ ' + String(totalPages);
+    const pageTotal = document.createElement('span'); pageTotal.className = 'muted ml-6'; pageTotal.textContent = '/ ' + String(totalPages);
 
     const next = document.createElement('button'); next.className = 'btn btn-ghost'; next.textContent = '▶'; next.setAttribute('aria-label','Next page');
     next.disabled = currentPage >= totalPages;
@@ -417,8 +414,7 @@ function render(){
     const trEmpty = document.createElement('tr');
     const tdEmpty = document.createElement('td');
     tdEmpty.colSpan = 6;
-    tdEmpty.style.textAlign = 'center';
-    tdEmpty.style.padding = '24px';
+    tdEmpty.className = 'empty-cell';
     const btn = document.createElement('button');
     btn.className = 'btn btn-ghost';
     btn.textContent = 'Reset all filters';
@@ -500,7 +496,7 @@ const clearQueryBtn = document.getElementById('clearQuery');
 if(qEl){
   qEl.addEventListener('input', (e)=>{
     try{ 
-      if(clearQueryBtn) clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'block' : 'none'; 
+      if(clearQueryBtn) clearQueryBtn.classList.toggle('hidden', !(qEl.value && qEl.value.length>0)); 
     }catch(err){ console.error('Clear button error:', err); }
     try{
       debouncedLoadPage();
@@ -510,7 +506,7 @@ if(qEl){
 if(clearQueryBtn){
   clearQueryBtn.addEventListener('click', ()=>{ 
     if(qEl) qEl.value = ''; 
-    if(clearQueryBtn) clearQueryBtn.style.display = 'none'; 
+    if(clearQueryBtn) clearQueryBtn.classList.add('hidden'); 
     try{ savePrefs(); }catch(e){} 
     loadPage(1); 
   });
@@ -545,17 +541,17 @@ if(clearQueryBtn){
     if(window.innerWidth <= 800 && filterPop){
       if(filterPop.contains(btn)) return;
       filterPop.insertBefore(btn, filterPop.firstChild);
-      btn.style.marginLeft = '';
+      btn.classList.remove('ml-auto');
     } else {
       const h = document.querySelector('h1');
       if(!h) return;
       if(h.contains(btn)){
         // ensure pushed to right
-        btn.style.marginLeft = 'auto';
+        btn.classList.add('ml-auto');
         return;
       }
       h.insertBefore(btn, document.getElementById('headerSubCount'));
-      btn.style.marginLeft = 'auto';
+      btn.classList.add('ml-auto');
     }
   }
 
@@ -567,7 +563,7 @@ if(clearQueryBtn){
 // Options integrated into filter popout; old Options popout removed.
 // header click sorting: set sort key and toggle direction if same key
 document.querySelectorAll('th[data-sort]').forEach(th => {
-  th.style.cursor = 'pointer';
+  th.classList.add('clickable');
   th.addEventListener('click', ()=>{
     const key = th.getAttribute('data-sort');
     if(!key) return;
@@ -626,44 +622,37 @@ if(maxSubsEl){
 // Filter popout open/close and clear behavior
 const filterBtn = document.getElementById('filterBtn');
 const filterPop = document.getElementById('filterPop');
-if(filterBtn && filterPop){
+  if(filterBtn && filterPop){
   filterBtn.addEventListener('click', (ev)=>{
     ev.stopPropagation();
     // Toggle visibility: when opening, position the popout below the button
-    if(filterPop.style.display === 'block'){
-      filterPop.style.display = 'none';
+    if(!filterPop.classList.contains('hidden')){
+      filterPop.classList.add('hidden');
       return;
     }
     try{
-      const rect = filterBtn.getBoundingClientRect();
-      // Account for page scroll when positioning
-      const top = rect.bottom + window.scrollY + 8; // small gap
-      // Prefer keeping right offset if defined, otherwise align to button
-      if(filterPop.style.right) {
-        filterPop.style.top = top + 'px';
-      } else {
-        // place flush with button's left edge if right not used
-        const left = rect.left + window.scrollX;
-        filterPop.style.left = (left) + 'px';
-        filterPop.style.top = top + 'px';
-      }
+      // Move the popout into a positioned ancestor so CSS can place it.
+      let anchor = filterBtn.parentElement || document.body;
+      if(anchor === filterPop) anchor = filterPop.parentElement || document.body;
+      // ensure anchor is positioned
+      anchor.classList.add('filter-anchor');
+      if(filterPop.parentElement !== anchor) anchor.appendChild(filterPop);
     }catch(e){
-      // fallback to a reasonable offset
-      filterPop.style.top = '84px';
+      // noop, fall back to default CSS placement
     }
-    filterPop.style.display = 'block';
+    filterPop.classList.remove('hidden');
     // filters now contain the Options section directly
   });
   // close when clicking outside
   document.addEventListener('click', (ev)=>{
-    if(filterPop.style.display === 'block' && !filterPop.contains(ev.target) && ev.target !== filterBtn){
-      filterPop.style.display = 'none';
+    if(!filterPop.classList.contains('hidden') && !filterPop.contains(ev.target) && ev.target !== filterBtn){
+      filterPop.classList.add('hidden');
     }
   });
   // prevent clicks inside popout from closing
   filterPop.addEventListener('click', (ev)=> ev.stopPropagation());
   const closePop = document.getElementById('closeFilterPop');
-  if(closePop) closePop.addEventListener('click', ()=> filterPop.style.display = 'none');
+  if(closePop) closePop.addEventListener('click', ()=> filterPop.classList.add('hidden'));
   // wire show toggles and the popout Show/Hide-all button
   const showAvailableEl = document.getElementById('showAvailable');
   const showBannedEl = document.getElementById('showBanned');
@@ -722,7 +711,7 @@ if(filterBtn && filterPop){
           if(hdr) hdr.click();
         }catch(e){}
         // close the popout after resetting
-        try{ filterPop.style.display = 'none'; }catch(e){}
+        try{ filterPop.classList.add('hidden'); }catch(e){}
       });
     }
   }
@@ -750,7 +739,7 @@ document.getElementById('sortDir').addEventListener('click', ()=>{
   if(document.getElementById('maxSubscribers')) document.getElementById('maxSubscribers').value = '';
   if(document.getElementById('firstMentionedPreset')) document.getElementById('firstMentionedPreset').value = '';
   if(document.getElementById('customDays')) document.getElementById('customDays').value = '';
-  if(document.getElementById('customDaysLabel')) document.getElementById('customDaysLabel').style.display = 'none';
+  if(document.getElementById('customDaysLabel')) document.getElementById('customDaysLabel').classList.add('hidden');
   if(document.getElementById('showAvailable')) document.getElementById('showAvailable').checked = true;
   document.getElementById('showBanned').checked = false;
   if(document.getElementById('showPending')) document.getElementById('showPending').checked = true;
@@ -816,17 +805,17 @@ if(perPageSelect){
 const firstMentionedPreset = document.getElementById('firstMentionedPreset');
 const customDaysLabel = document.getElementById('customDaysLabel');
 const customDaysInput = document.getElementById('customDays');
-if(firstMentionedPreset){
+  if(firstMentionedPreset){
   // Load initial state from prefs
   if(prefs.firstMentionedPreset === 'custom' && customDaysLabel){
-    customDaysLabel.style.display = 'flex';
+    customDaysLabel.classList.remove('hidden');
   }
   firstMentionedPreset.addEventListener('change', ()=>{
     const val = firstMentionedPreset.value;
     if(val === 'custom' && customDaysLabel){
-      customDaysLabel.style.display = 'flex';
+      customDaysLabel.classList.remove('hidden');
     } else {
-      if(customDaysLabel) customDaysLabel.style.display = 'none';
+      if(customDaysLabel) customDaysLabel.classList.add('hidden');
     }
     try{ savePrefs(); }catch(e){}
     loadPage(1);
@@ -845,53 +834,32 @@ function openDescriptionModal(htmlText, lastChecked){
   if(!modal){
     modal = document.createElement('div');
     modal.id = 'descModal';
-    modal.style.position = 'fixed';
-    modal.style.left = 0;
-    modal.style.top = 0;
-    modal.style.width = '100%';
-    modal.style.height = '100%';
-    modal.style.background = 'rgba(0,0,0,0.5)';
-    modal.style.display = 'flex';
-    modal.style.alignItems = 'center';
-    modal.style.justifyContent = 'center';
-    modal.style.zIndex = 9999;
+    modal.className = 'modal-overlay';
     const inner = document.createElement('div');
-    inner.style.background = 'white';
-    inner.style.maxWidth = '900px';
-    inner.style.padding = '20px';
-    inner.style.borderRadius = '10px';
-    inner.style.maxHeight = '80%';
-    inner.style.overflow = 'auto';
+    inner.className = 'modal-inner';
     inner.id = 'descModalInner';
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '✕';
     closeBtn.setAttribute('aria-label', 'Close');
     closeBtn.title = 'Close';
-    closeBtn.className = 'btn btn-ghost';
-    closeBtn.style.float = 'right';
-    closeBtn.addEventListener('click', ()=>{ modal.remove(); });
+    closeBtn.className = 'btn btn-ghost modal-close';
+    closeBtn.addEventListener('click', ()=>{ modal.remove(); document.body.classList.remove('no-scroll'); });
     inner.appendChild(closeBtn);
     const content = document.createElement('div');
     content.id = 'descModalContent';
-    content.style.whiteSpace = 'pre-wrap';
-    content.style.marginTop = '8px';
-    content.style.color = '#1a1a1a';
-    content.style.lineHeight = '1.6';
+    content.className = 'modal-content';
     inner.appendChild(content);
     const timestamp = document.createElement('div');
     timestamp.id = 'descModalTimestamp';
-    timestamp.style.marginTop = '16px';
-    timestamp.style.paddingTop = '12px';
-    timestamp.style.borderTop = '1px solid #e0e0e0';
-    timestamp.style.fontSize = '0.85rem';
-    timestamp.style.color = '#666';
+    timestamp.className = 'modal-timestamp muted';
     inner.appendChild(timestamp);
     modal.appendChild(inner);
     // close modal when clicking outside the inner content
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
+      if (e.target === modal) { modal.remove(); document.body.classList.remove('no-scroll'); }
     });
     document.body.appendChild(modal);
+    document.body.classList.add('no-scroll');
   }
   const content = document.getElementById('descModalContent');
   const timestamp = document.getElementById('descModalTimestamp');
@@ -911,7 +879,7 @@ updateSortedHeader();
 // Ensure clear (X) button visibility reflects loaded query from prefs
 try{
   if(typeof qEl !== 'undefined' && qEl && typeof clearQueryBtn !== 'undefined' && clearQueryBtn){
-    clearQueryBtn.style.display = (qEl.value && qEl.value.length>0) ? 'block' : 'none';
+    clearQueryBtn.classList.toggle('hidden', !(qEl.value && qEl.value.length>0));
   }
 }catch(e){/* ignore */}
 
