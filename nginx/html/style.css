@@ -1322,34 +1322,39 @@ th.sticky {
 
 /* On small viewports keep the title full-width and controls inline beneath it */
 @media (max-width: 720px) {
+  /* Use grid to force the title to span the first row and keep the
+     time-selector + filter inline together on the second row. This
+     prevents the filter from wrapping to its own line. */
   .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-auto-rows: auto;
+    gap: 8px 12px;
+    align-items: start;
+    margin-bottom: 16px;
   }
 
   .section-header > div:first-child {
-    order: 1;
+    grid-column: 1 / -1;
     width: 100%;
   }
 
-  .section-header .time-selector,
-  .section-header .discover-filter {
-    order: 2;
-  }
-
   .section-header .time-selector {
-    width: auto;
+    grid-column: 1 / 2;
     display: inline-flex;
     gap: 8px;
-    flex-wrap: wrap;
+    white-space: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     align-items: center;
   }
 
   .section-header .discover-filter {
-    margin-left: 8px;
-    margin-top: 0;
+    grid-column: 2 / 3;
+    justify-self: start;
     align-self: center;
+    margin-left: 8px;
+    white-space: nowrap;
   }
 }
 
