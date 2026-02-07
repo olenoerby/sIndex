@@ -767,8 +767,7 @@ th.sticky {
 /* Compact chart variant used in analytics */
 .chart-wrap.compact { height: 320px; }
 
-/* Filter popout internal layout (replaces many inline styles) */
-#filterPop { display: none; }
+#/* Filter popout internal layout (replaces many inline styles) */
 #filterPop .section-title { font-weight: 700; margin-bottom: 8px; font-size: 1.05rem; }
 #filterPop table { width: 100%; border-collapse: collapse; }
 #filterPop td { padding: 6px 4px; vertical-align: middle; font-size: 0.9rem; }
