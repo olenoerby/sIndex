@@ -47,6 +47,7 @@ const searchClear = document.getElementById('searchClear');
 const refreshBtn = document.getElementById('refreshBtn');
 const sortBy = document.getElementById('sortBy');
 const filterChips = document.querySelectorAll('.filter-chip');
+const filterBtn = document.getElementById('filterBtn');
 const subredditGrid = document.getElementById('subredditGrid');
 const statusMessage = document.getElementById('statusMessage');
 const resultsInfo = document.getElementById('resultsInfo');
@@ -271,15 +272,33 @@ sortBy.addEventListener('change', (e) => {
   loadSubreddits();
 });
 
-filterChips.forEach(chip => {
-  chip.addEventListener('click', () => {
-    filterChips.forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    currentFilter = chip.dataset.filter;
+if (filterBtn) {
+  const _states = ['all','nsfw','sfw'];
+  function _updateFilterBtn(){
+    const labels = { all: 'All', nsfw: 'NSFW Only', sfw: 'Safe only' };
+    try{ filterBtn.textContent = labels[currentFilter] || 'All'; }catch(e){}
+    if(currentFilter === 'nsfw') filterBtn.classList.add('active'); else filterBtn.classList.remove('active');
+  }
+  _updateFilterBtn();
+  filterBtn.addEventListener('click', () => {
+    const idx = Math.max(0, _states.indexOf(currentFilter));
+    const next = _states[(idx + 1) % _states.length];
+    currentFilter = next;
+    _updateFilterBtn();
     currentPage = 1;
     loadSubreddits();
   });
-});
+} else {
+  filterChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      filterChips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentFilter = chip.dataset.filter;
+      currentPage = 1;
+      loadSubreddits();
+    });
+  });
+}
 
 prevPage.addEventListener('click', () => {
   if (currentPage > 1) {
@@ -310,14 +329,22 @@ function initializePage() {
     searchClear.style.display = searchQuery ? 'block' : 'none';
   }
   
-  // Set active filter chip
-  filterChips.forEach(chip => {
-    if (chip.dataset.filter === currentFilter) {
-      chip.classList.add('active');
-    } else {
-      chip.classList.remove('active');
-    }
-  });
+  // Set active filter UI (single button or chips)
+  if (filterBtn) {
+    try{
+      const labels = { all: 'All', nsfw: 'NSFW Only', sfw: 'Safe only' };
+      filterBtn.textContent = labels[currentFilter] || 'All';
+      if(currentFilter === 'nsfw') filterBtn.classList.add('active'); else filterBtn.classList.remove('active');
+    }catch(e){}
+  } else {
+    filterChips.forEach(chip => {
+      if (chip.dataset.filter === currentFilter) {
+        chip.classList.add('active');
+      } else {
+        chip.classList.remove('active');
+      }
+    });
+  }
   
   // Load data
   loadSubreddits();
