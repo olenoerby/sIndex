@@ -696,6 +696,13 @@ th.sticky {
   text-align: left;
 }
 
+/* Slightly smaller headings for non-frontpage pages */
+.browse-header.small-title h1 {
+  margin: 0 0 8px 0;
+  font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+  text-align: left;
+}
+
 .browse-header .subtitle {
   font-size: 0.95rem;
   color: var(--muted);
