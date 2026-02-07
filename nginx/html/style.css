@@ -1018,6 +1018,7 @@ th.sticky {
 
 .section-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
@@ -1036,9 +1037,22 @@ th.sticky {
   margin-top: 4px;
 }
 
-.time-selector {
-  display: flex;
+  .time-selector {
+  display: inline-flex;
   gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Make the title occupy the full first row so the controls sit on the next row inline */
+.section-header > div:first-child {
+  flex-basis: 100%;
+}
+
+.section-header .discover-filter {
+  flex: 0 0 auto;
 }
 
 /* Radio group styling for compact controls */
