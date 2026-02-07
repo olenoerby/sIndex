@@ -660,7 +660,6 @@ th.sticky {
   background: var(--panel);
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
-  display: none;
   right: 12px;
   top: 64px;
 }
