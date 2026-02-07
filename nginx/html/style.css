@@ -43,6 +43,8 @@ body {
   z-index: 100;
   box-shadow: 0 4px 20px rgba(0,0,0,0.3) !important;
 }
+/* Small spacing below navigation to separate it from page content */
+.main-nav { margin-bottom: 12px; }
 
 .nav-link {
   padding: 12px 24px !important;
@@ -138,6 +140,7 @@ body > .container,
 body > .page {
   padding-left: 22px;
   padding-right: 22px;
+  padding-bottom: 12px;
 }
 
 body > h1 {
@@ -683,6 +686,7 @@ th.sticky {
   max-width: 1400px;
   margin: 0 auto;
   padding: 0px;
+  padding-bottom: 12px;
 }
 
 .browse-header {
